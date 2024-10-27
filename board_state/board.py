@@ -17,6 +17,18 @@ def to_bitboard(board):
     return bitboard
 
 
+def to_board(bitboard, m, n):
+    board = np.zeros((2, m, n), dtype=np.int8)
+    for turn in bitboard:
+        c = 1 if turn == -1 else 0
+        for i in range(m):
+            for j in range(n):
+                j_ = n - 1 - j
+                if bitboard[turn] & (1 << (j_ + i * (n + 1))):
+                    board[c, i, j] = 1
+    return board
+
+
 if __name__ == "__main__":
     import time
     from utils.perf_monitor import PerfMonitorMixin
@@ -27,6 +39,9 @@ if __name__ == "__main__":
              [-1, 1 , 0 , 0 ],
              [1 , -1, 0 , 0 ]]
     board = np.array(board).astype(np.int8)
+    m = board.shape[0]
+    n = board.shape[1]
+    print(to_board(to_bitboard(board), m, n))
     # board = np.zeros((15, 15))
     mnk_board = MnkBoard(board.shape[1], board.shape[0], k, to_bitboard(board))
     for _ in range(10):

@@ -1,3 +1,7 @@
+# Projects
+runs/
+weights/
+
 # Cython
 *.c
 *.html

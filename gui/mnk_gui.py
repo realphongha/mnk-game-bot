@@ -165,7 +165,7 @@ class MnkGUI:
         self.moves.append(pos)
 
     def bot_move(self, possible_pos):
-        pos = self.player.solve(self.board, self.state, self.moves)
+        pos = self.player.predict(self.board, self.state, self.moves)
         assert pos in possible_pos, f"Invalid move: {pos}"
         self.move(pos)
 
@@ -212,7 +212,7 @@ class MnkGUI:
                                         if rect.collidepoint(event.pos):
                                             if self.board.index(i, j) != 0:
                                                 raise exception.Break
-                                            self.move((j, i))
+                                            self.move((i, j))
                                             res = self.change_state()
                                             raise exception.Break
 

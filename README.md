@@ -33,8 +33,9 @@ First `git clone https://github.com/realphongha/mnk-game-bot.git` to clone this 
 Go inside the repo: `cd mnk-game-bot`
 
 ## Install requirements
-Run:
-```
+- Python 3.10:
+- Requirements:
+``` bash
 pip install -r requirements.txt
 ```
 

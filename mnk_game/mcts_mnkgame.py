@@ -22,21 +22,28 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         self.c = exploration_const
         self.num_simulations = num_simulations
         self.root = None
+        self.debug = True
 
     def update_tree(self, two_last_moves):
         try:
-            print("Inheriting previous tree root...")
+            if self.debug:
+                print("Inheriting previous tree root...")
             m1, m2 = two_last_moves
             self.root = self.root.children[m1].children[m2]
             return True
         except KeyError:
-            print("Moves not found in previous tree. Initializing new tree...")
+            if self.debug:
+                print("Moves not found in previous tree. Initializing new tree...")
             return False
+
+    def predict(self, board, turn, moves):
+        return self.solve(board, turn, moves)[0]
 
     def solve(self, board: MnkBoard, turn: int, moves) -> Tuple[int, int]:
         start = time.time()
         if len(moves) < 2 or self.root is None:
-            print("Initializing new tree...")
+            if self.debug:
+                print("Initializing new tree...")
             self.root = MnkState(board, turn, self.policy, None, None)
         else:
             if not self.update_tree(moves[-2:]):
@@ -51,24 +58,63 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         child = self.root.children.get(move, None)
         return self.score(child, 0) if child.n != 0 else None
 
+    def get_p(self, temperature=1.0):
+        if self.root is None:
+            return None
+        p = np.zeros((self.root.board.m * self.root.board.n,), dtype=np.float32)
+        for child in self.root.children.values():
+            i, j = child.last_move
+            p[i * self.root.board.n + j] = child.n
+        sum_p = np.sum(p)
+        if temperature == 0.0:
+            p = np.zeros_like(p)
+            p[np.argmax(p)] = 1.0
+        else:
+            p = np.power(p, 1.0 / temperature)
+            p /= np.sum(p)
+        return p
+
     def get_results(self):
         best_child = None
         if self.total_rollout > 0 and len(self.root.children.values()) > 0:
             children = []
             for child in self.root.children.values():
                 children.append((child, self.score(child, 0)))
-            top_k = 5 if len(children) >= 5 else len(children)
-            children.sort(key=lambda child: -child[1])
-            print("\nTop %i moves:" % top_k)
-            for child, score in children[:5]:
-                print("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
-                    (score, child.r, child.n)
-                )
-            best_child = children[0][0]
-        print("Played %i rollouts!" % self.rollout_count)
-        print("Total: %i rollouts (inherited from previous trees)!" %
-            self.total_rollout)
-        return best_child.last_move if (best_child and self.total_rollout > 0) else (-1, -1)
+            if self.temperature == 0.0:
+                best_child = max(children, key=lambda child: child[1])[0]
+            else:
+                p = []
+                for child, _ in children:
+                    p.append(child.n)
+                p = np.power(p, 1.0 / self.temperature)
+                p /= np.sum(p)
+                best_child_i = np.random.choice([i for i in range(len(children))], p=p)
+                best_child = children[best_child_i][0]
+            if self.debug:
+                top_k = 5 if len(children) >= 5 else len(children)
+                children.sort(key=lambda child: -child[1])
+                print("\nTop %i moves:" % top_k)
+                for child, score in children[:5]:
+                    print("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
+                        (score, child.r, child.n)
+                    )
+                print("Played %i rollouts!" % self.rollout_count)
+                print("Total: %i rollouts (inherited from previous trees)!" %
+                    self.total_rollout)
+        return best_child.last_move if (best_child and self.total_rollout > 0) else None, \
+            self.get_p()
+
+    def soft_selection(self, node):
+        if self.temperature == 0.0:
+            return max(node.children.values(), key=lambda child: self.score(child, 0))
+        p = [n.n for n in node.children.values()]
+        if np.sum(p) == 0.0:
+            p = [1.0/len(p)] * len(p)
+        else:
+            p = np.power(p, 1.0 / self.temperature)
+            p /= np.sum(p)
+        return np.random.choice(list(node.children.values()), p=p)
+
 
     def selection(self):
         node = self.root

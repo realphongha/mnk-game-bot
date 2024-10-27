@@ -9,9 +9,38 @@ board_game:
   button_font_size: 15
   symbol_font_size: 90
 bot:
-  algorithm: mcts
-  config:
+  algorithm: alphazero
+  alphazero:
     max_thinking_time: 0.5  # in seconds
+    batch: 32
+    workers: 2
+    exploration_const: 1.4142135623730951
+    dirichlet_alpha: 0.3
+    dirichlet_eps: 0.25
+    exp_dir: runs
+    device: cuda
+    debug: False
+    it: 100
+    net:
+      type: residual
+      residual:
+        in_channels: 2
+        conv_channels: 16
+        res_blocks: 1
+    mcts_warm_start:
+      self_play_games: 500
+      lr: 0.005
+      eps: 5 
+    temperature: [1.0, 0.01]
+    eval: vs_mcts  # vs_mcts, vs_last
+    self_play_games: 20
+    self_play_games_vs_random: 5
+    self_play_games_vs_mcts: 5 
+    lr: 0.001
+    eps: 2
+    arena_games: 100
+  mcts:
+    max_thinking_time: 0.1  # in seconds
     max_rollout: 1000000000
     processes: 2  # number of processes
     policy: simple

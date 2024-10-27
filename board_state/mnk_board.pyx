@@ -81,7 +81,7 @@ cdef class MnkBoard:
                     res.append((i, j))
         return res
 
-    def put(self, int turn, position, display=True):
+    def put(self, int turn, position, display=False):
         cdef int i, j 
         cdef mpz bitmask
         # assert turn == 1 or turn == -1, "Invalid player: %i" % turn

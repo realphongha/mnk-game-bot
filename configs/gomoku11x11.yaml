@@ -10,7 +10,7 @@ board_game:
   symbol_font_size: 40
 bot:
   algorithm: mcts
-  config:
+  mcts:
     max_thinking_time: 5.0  # in seconds
     max_rollout: 1000000000
     processes: 8  # number of processes

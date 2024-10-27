@@ -1,46 +1,138 @@
-from .mcts_mnkgame import MonteCarloTreeSearchMnkGame
-from .alphazero_net import AlphaZeroNet
+import time
+import math
+import torch
+import torch.nn.functional as F
+import numpy as np
+
+from .mnk_bot_base import MnkGameBotBase
+from .alphazero_net import MODELS
+from board_state.board import to_board
+from board_state.mnk_state import MnkState
 
 
-def bitboard_to_tensor(bb):
-    pass
-
-
-
-class AlphaZeroMnkGame(MonteCarloTreeSearchMnkGame):
-    def __init__(self, max_thinking_time, max_rollout, processes, policy,
-                 exploration_const, num_simulations, m, n, k):
-        super().__init__(max_thinking_time, max_rollout, processes, policy,
-                         exploration_const, num_simulations)
+class AlphaZeroMnkGame(MnkGameBotBase):
+    def __init__(self, m, n, k, max_thinking_time, batch, exploration_const,
+                 dirichlet_alpha, dirichlet_eps, exp_dir, device, debug, net,
+                 **kwargs):
+        self.max_thinking_time = max_thinking_time
+        self.batch = batch
+        self.c = exploration_const
         self.m, self.n, self.k = m, n, k
-        self.net = AlphaZeroNet(m, n, k)
+        self.dirichlet_alpha = dirichlet_alpha
+        self.dirichlet_eps = dirichlet_eps
+        self.net_cfg = net
+        self.device = device
+        self.debug = debug
 
-    def update_net(self, net):
-        pass
+    def init_net(self, net=None):
+        if net is not None:
+            self.net = net
+            self.net.to(self.device)
+        else:
+            net_type = self.net_cfg["type"]
+            self.net = MODELS[net_type](
+                self.m, self.n, self.k,
+                **self.net_cfg[net_type]
+            )
+            self.net.init_weights()
+            self.net.to(self.device)
+        self.net.eval()
+        return self.net
+
+    def update_tree(self, two_last_moves):
+        try:
+            if self.debug:
+                print("Inheriting previous tree root...")
+            m1, m2 = two_last_moves
+            self.root = self.root.children[m1].children[m2]
+            return True
+        except KeyError:
+            if self.debug:
+                print("Moves not found in previous tree. Initializing new tree...")
+            return False
 
     @staticmethod
     def score(node, c):
         # puct
-        return node.r + c * node.prior * math.sqrt(node.parent.n) / (1 + node.n)
+        return node.r / (1 + node.n) + c * node.prior * math.sqrt(node.parent.n) / (1 + node.n)
 
+    @staticmethod
+    def bitboard_to_tensor(bb, m, n, device):
+        board = to_board(bb, m, n)
+        tensor = torch.tensor(board).float().to(device)
+        return tensor.unsqueeze(0)
 
-    def solve(self, board: MnkBoard, turn: int, moves) -> Tuple[int, int]:
+    @torch.no_grad()
+    def solve(self, board, turn, moves):
+        self.net.eval()
         start = time.time()
         if len(moves) < 2 or self.root is None:
-            print("Initializing new tree...")
-            self.root = MnkState(board, turn, self.policy, None, None)
-            policy, _ = self.net(bitboard_to_tensor(self.root.board))
-            self.root.prior =
+            if self.debug:
+                print("Initializing new tree...")
+            self.root = MnkState(board, turn, "blah", None, None)
         else:
             if not self.update_tree(moves[-2:]):
-                self.root = MnkState(board, turn, self.policy, None, None)
-                policy, _ = self.net(bitboard_to_tensor(self.root.board))
-                self.root.prior =
+                self.root = MnkState(board, turn, "blah", None, None)
 
-        while time.time()-start < self.max_thinking_time and \
-                self.total_rollout < self.max_rollout:
+        while time.time()-start < self.max_thinking_time:
             self.loop()
         return self.get_results()
+
+    def get_results(self):
+        policy = np.zeros((self.m * self.n,), dtype=np.float32)
+        policy_ = []
+        nodes = list(self.root.children.values())
+        for node in nodes:
+            i, j = node.last_move
+            policy[i*self.n + j] = node.n
+            policy_.append(node.n)
+        assert policy.sum() > 0, "No backpropagation found. Please increase max_thinking_time."
+        policy /= policy.sum()
+        i = None
+        j = None
+        if self.temperature == 0.0:
+            move = np.argmax(policy)
+            i, j = move // self.n, move % self.n
+        else:
+            policy_ = np.power(policy_, 1.0/self.temperature)
+            policy_ /= policy_.sum()
+            assert policy_.sum() > 0, "No backpropagation found. Please increase max_thinking_time."
+            move_i = np.random.choice([i for i in range(len(policy_))], p=policy_)
+            i, j = nodes[move_i].last_move
+        if self.debug:
+            children = []
+            for child in nodes:
+                children.append((child, self.score(child, 0)))
+            top_k = 5 if len(children) >= 5 else len(children)
+            children.sort(key=lambda child: -child[1])
+            print("\nTop %i moves:" % top_k)
+            for child, score in children[:5]:
+                print("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
+                    (score, child.r, child.n)
+                )
+        return (i, j), policy
+
+    @torch.no_grad()
+    def predict(self, board, turn, _moves):
+        self.net.eval()
+        b = self.bitboard_to_tensor(board.get_board(), self.m, self.n, self.device)
+        policy, value = self.net(b)
+        policy = F.softmax(policy, dim=-1)
+        value = F.tanh(value)
+        policy = policy[0]
+        self.last_predict_value = value[0]
+        possible_move = set(board.get_possible_pos())
+        best_move = None
+        max_prob = -1.0
+        for i in range(self.m):
+            for j in range(self.n):
+                if (i, j) not in possible_move:
+                    continue
+                move = i * self.n + j
+                if policy[move] > max_prob:
+                    max_prob = policy[move]
+                    best_move = (i, j)
+        return best_move
 
     def selection(self):
         node = self.root
@@ -50,29 +142,42 @@ class AlphaZeroMnkGame(MonteCarloTreeSearchMnkGame):
             node = selected_node
         return node
 
-    def choosing_policy(self, states):
-        return random.choice(states)
-
     def expansion(self, node):
-        possible_pos = node.board.get_possible_pos()
-        if node.board.check_endgame() == 0 and possible_pos:
-            policy, value = self.net(bitboard_to_tensor(node.board))
-            for state in node.next_states():
-                i, j = state.last_move
-                state.prior = policy[i*self.n + j]
-                node.children[state.last_move] = state
-            node.r += value
-            node.n += 1
+        res = node.board.check_endgame()
+        if res:
+            return res
+        states = node.get_next_states()
+        if not states:
+            return 0.0
+        policy, value = self.net(
+            self.bitboard_to_tensor(node.board.get_board(), self.m, self.n, self.device)
+        )
+        policy = F.softmax(policy, dim=-1)
+        value = F.tanh(value)
+        policy = policy[0]
+        value = value[0]
+        if node == self.root:
+            dirichlet_noise = np.random.dirichlet(
+                [self.dirichlet_alpha] * self.m * self.n
+            )
+            dirichlet_noise = torch.tensor(dirichlet_noise).to(self.device)
+            policy = (1 - self.dirichlet_eps) * policy + self.dirichlet_eps * dirichlet_noise
+        for state in states:
+            i, j = state.last_move
+            state.prior = policy[i*self.n + j].item()
+        return value.item()
 
-    def backpropagation(self, node):
-        value = node.r / node.n
+    def backpropagation(self, node, value):
+        # node.turn means the next player
+        reward = abs(node.turn - value) / 2
         while node is not None:
             node.n += 1
-            node.r += value
+            node.r += reward
+            reward = 1-reward
             node = node.parent
 
     def loop(self):
         node = self.selection()
-        self.expansion(node)
-        self.backpropagation(node)
+        value = self.expansion(node)
+        self.backpropagation(node, value)
 
