@@ -1,6 +1,7 @@
 # Projects
 runs/
 weights/
+wandb/
 
 # Cython
 *.c

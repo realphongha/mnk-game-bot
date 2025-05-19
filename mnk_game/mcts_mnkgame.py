@@ -17,7 +17,8 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         super().__init__(max_thinking_time)
         self.max_rollout = max_rollout
         self.processes = processes
-        self.pool = multiprocessing.Pool(self.processes)
+        if self.processes != 1:
+            self.pool = multiprocessing.Pool(self.processes)
         self.policy = policy
         self.c = exploration_const
         self.num_simulations = num_simulations
@@ -66,7 +67,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
             i, j = child.last_move
             p[i * self.root.board.n + j] = child.n
         sum_p = np.sum(p)
-        if temperature == 0.0:
+        if temperature <= 0.05:
             p = np.zeros_like(p)
             p[np.argmax(p)] = 1.0
         else:
@@ -80,7 +81,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
             children = []
             for child in self.root.children.values():
                 children.append((child, self.score(child, 0)))
-            if self.temperature == 0.0:
+            if self.temperature <= 0.05:
                 best_child = max(children, key=lambda child: child[1])[0]
             else:
                 p = []
@@ -105,7 +106,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
             self.get_p()
 
     def soft_selection(self, node):
-        if self.temperature == 0.0:
+        if self.temperature <= 0.05:
             return max(node.children.values(), key=lambda child: self.score(child, 0))
         p = [n.n for n in node.children.values()]
         if np.sum(p) == 0.0:
@@ -140,9 +141,11 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         self.total_rollout += self.num_simulations
         if self.num_simulations == 1:
             return [node.rollout()]
-        # node.board is deep-copied due to multiprocessing by default
-        args = [(node.board, node.turn) for _ in range(self.num_simulations)]
-        return self.pool.starmap(rollout, args)
+        args = [(node.board.duplicate(), node.turn) for _ in range(self.num_simulations)]
+        if self.processes != 1:
+            return self.pool.starmap(rollout, args)
+        else:
+            return [rollout(*arg) for arg in args]
 
     def backpropagation(self, node, winner, times=1):
         # node.turn means the next player

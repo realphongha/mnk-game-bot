@@ -13,7 +13,7 @@ bot:
   alphazero:
     max_thinking_time: 0.5  # in seconds
     batch: 32
-    workers: 2
+    workers: 8
     exploration_const: 1.4142135623730951
     dirichlet_alpha: 0.3
     dirichlet_eps: 0.25
@@ -28,17 +28,19 @@ bot:
         conv_channels: 16
         res_blocks: 1
     mcts_warm_start:
-      self_play_games: 500
+      self_play_games: 0
       lr: 0.005
       eps: 5 
     temperature: [1.0, 0.01]
-    eval: vs_mcts  # vs_mcts, vs_last
-    self_play_games: 20
-    self_play_games_vs_random: 5
-    self_play_games_vs_mcts: 5 
-    lr: 0.001
+    lr_scheduler:
+      init_lr: 0.01
+      min_lr: 0.0001
+    eval: vs_last  # vs_mcts, vs_last
+    self_play_games: 64
+    self_play_games_vs_random: 8
+    self_play_games_vs_mcts: 8
     eps: 2
-    arena_games: 100
+    arena_games: 64
   mcts:
     max_thinking_time: 0.1  # in seconds
     max_rollout: 1000000000

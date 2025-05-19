@@ -104,54 +104,6 @@ class ResidualNet(nn.Module):
         return policy, value
 
 
-
-class AlphaZeroNetOld(nn.Module):
-    def __init__(self, m, n, k, backbone="simple"):
-        super(AlphaZeroNetOld, self).__init__()
-        # handle near-edge cases
-        self.padding = math.ceil(k / 2)
-        self.num_filters = 128
-        if backbone == "simple":
-            self.backbone = SimpleBackbone(self.padding, self.num_filters)
-            self.backbone.init_weights()
-            h_w = self.backbone.get_output_size((m, n))
-            h, w = calc_conv2d_output(h_w, kernel_size=3, pad=0)
-            self.output_size = h * w
-        else:
-            raise NotImplementedError
-
-        self.policy = nn.Sequential(
-            nn.Conv2d(self.num_filters, 2, kernel_size=3, stride=1, bias=False),
-            nn.BatchNorm2d(2),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Dropout(0.5),
-            nn.Linear(2 * self.output_size, m * n),
-        )
-
-        self.value = nn.Sequential(
-            nn.Conv2d(self.num_filters, 1, kernel_size=3, stride=1, bias=False),
-            nn.BatchNorm2d(1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Dropout(0.5),
-            nn.Linear(self.output_size, 1),
-        )
-
-    def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        x = self.backbone(x)
-        policy = self.policy(x)
-        value = self.value(x)
-        return policy, value
-
-
 MODELS = {
     "residual": ResidualNet,
 }

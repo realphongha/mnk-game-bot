@@ -90,7 +90,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         policy /= policy.sum()
         i = None
         j = None
-        if self.temperature == 0.0:
+        if self.temperature <= 0.05:
             move = np.argmax(policy)
             i, j = move // self.n, move % self.n
         else:
@@ -103,10 +103,11 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             children = []
             for child in nodes:
                 children.append((child, self.score(child, 0)))
-            top_k = 5 if len(children) >= 5 else len(children)
             children.sort(key=lambda child: -child[1])
-            print("\nTop %i moves:" % top_k)
-            for child, score in children[:5]:
+            k = 5
+            children = children[:k] if len(children) >= k else children
+            print(f"\nTop {k} moves:")
+            for child, score in children:
                 print("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
                     (score, child.r, child.n)
                 )
@@ -124,6 +125,8 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         possible_move = set(board.get_possible_pos())
         best_move = None
         max_prob = -1.0
+        if self.debug:
+            moves = []
         for i in range(self.m):
             for j in range(self.n):
                 if (i, j) not in possible_move:
@@ -132,6 +135,19 @@ class AlphaZeroMnkGame(MnkGameBotBase):
                 if policy[move] > max_prob:
                     max_prob = policy[move]
                     best_move = (i, j)
+                if self.debug:
+                    moves.append((i, j, policy[move]))
+        if self.debug:
+            moves.sort(key=lambda move: -move[2])
+            k = 5
+            moves = moves[:k] if len(moves) >= k else moves
+            print(f"\nTop {k} moves:")
+            for i, j, p in moves:
+                print(f"Move: ({i}, {j}), prob: %.2f" % p)
+            winrate = (self.last_predict_value + 1)/2
+            winrate *= turn
+            print("Winrate = %.2f" % winrate)
+
         return best_move
 
     def selection(self):
