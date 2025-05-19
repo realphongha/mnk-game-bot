@@ -20,7 +20,7 @@ bot:
     exp_dir: runs
     device: cuda
     debug: False
-    it: 100
+    it: 50
     net:
       type: residual
       residual:
@@ -32,13 +32,14 @@ bot:
       lr: 0.005
       eps: 5 
     temperature: [1.0, 0.01]
+    draw_reward: -0.1  # discourage draw
     lr_scheduler:
       init_lr: 0.01
       min_lr: 0.0001
     eval: vs_last  # vs_mcts, vs_last
-    self_play_games: 64
-    self_play_games_vs_random: 8
-    self_play_games_vs_mcts: 8
+    self_play_games: 32
+    self_play_games_vs_random: 32
+    self_play_games_vs_mcts: 32
     eps: 2
     arena_games: 64
   mcts:

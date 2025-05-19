@@ -137,8 +137,10 @@ def self_play_old(cfg, temperature, bot1, bot2, num_games, get_data_from_all=Fal
 
 
 class MnkDataset(torch.utils.data.Dataset):
-    def __init__(self, data, m, n):
+    def __init__(self, cfg, data, m, n):
+        self.cfg = cfg
         self.data = data
+        self.draw_reward = cfg["bot"]["alphazero"]["draw_reward"]
         self.m, self.n = m, n
         self.hashes = set()
         new_data = []
@@ -216,6 +218,8 @@ class MnkDataset(torch.utils.data.Dataset):
         policy = self.policy_to_1d(policy)
         policy = torch.tensor(policy, dtype=torch.float)
 
+        if res == 0:
+            res = self.draw_reward
         return board, policy, res
 
 
@@ -233,7 +237,7 @@ def deep_copy_net(net, cfg):
 def train(data, cfg, lr, eps, net=None):
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
     device = cfg["bot"]["alphazero"]["device"]
-    dataset = MnkDataset(data, m, n)
+    dataset = MnkDataset(cfg, data, m, n)
     print(f"Training the network for {eps} epochs and {len(dataset)} data points...")
 
     loader = DataLoader(
@@ -541,9 +545,11 @@ def main(cfg, opt):
 
         # save net
         torch.save(net.state_dict(), os.path.join(exp_dir, f"it{it+1}.pth"))
+        print(f"Saved weights to it{it+1}.pth")
         if evolved or best_net is None:
             best_net = deep_copy_net(net, cfg)
             torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
+            print(f"Saved weights to best.pth")
         wandb.log({
             "winrate_vs_mcts": vs_mcts[1],
             "learning_rate": lr,
