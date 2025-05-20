@@ -45,7 +45,7 @@ bot:
   mcts:
     max_thinking_time: 0.1  # in seconds
     max_rollout: 1000000000
-    processes: 2  # number of processes
+    processes: 1  # number of processes
     policy: simple
     exploration_const: 1.4142135623730951
-    num_simulations: 2
+    num_simulations: 1

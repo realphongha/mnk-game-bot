@@ -29,33 +29,6 @@ class ResidualBlock(nn.Module):
         return F.relu(x + residual)
 
 
-class SimpleBackbone(nn.Module):
-    def __init__(self, padding, num_filters=128):
-        super(SimpleBackbone, self).__init__()
-        self.padding = padding
-        self.conv1 = nn.Conv2d(2, num_filters, kernel_size=3, padding=self.padding)
-        self.conv2 = nn.Conv2d(num_filters, num_filters, kernel_size=3, padding=self.padding)
-
-    def get_output_size(self, h_w):
-        h_w = calc_conv2d_output(h_w, kernel_size=3, pad=self.padding)
-        h_w = calc_conv2d_output(h_w, kernel_size=3, pad=self.padding)
-        return h_w
-
-    def init_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        return x
-
-
 class ResidualNet(nn.Module):
     def __init__(self, m, n, k, in_channels=2, conv_channels=16, res_blocks=1):
         super(ResidualNet, self).__init__()
@@ -113,15 +86,18 @@ if __name__ == "__main__":
     import numpy as np
     from board_state.board import to_board, to_bitboard
 
-    board = [[-1, 1 , -1, 0 ],
-             [0 , -1, 0 , -1],
-             [-1, 1 , 0 , 0 ],
-             [1 , -1, 0 , 0 ]]
+    board = [[[1, 0, 1, 0],
+              [0, 1, 0, 1],
+              [1, 0, 0, 0],
+              [0, 1, 0, 0]],
+             [[0, 1, 0, 0],
+              [0, 0, 0, 0],
+              [0, 1, 0, 0],
+              [1, 0, 0, 0]]]
     board = np.array(board).astype(np.float32)
-    m = board.shape[0]
-    n = board.shape[1]
+    m = board.shape[1]
+    n = board.shape[2]
     k = 3
-    board = to_board(to_bitboard(board), m, n)
     inp = torch.tensor(board).float().unsqueeze(0)
     net = ResidualNet(m, n, 3)
     print(net)

@@ -35,7 +35,7 @@ bot:
     self_play_games_vs_random: 8
     self_play_games_vs_mcts: 8
     temperature: [1.0, 0.01]
-    draw_reward: -0.1  # discourage draw
+    draw_reward: 0.0
     lr_scheduler:
       init_lr: 0.0001
       min_lr: 0.00001
