@@ -8,6 +8,7 @@ import copy
 import random
 import hashlib
 import shutil
+import logging
 
 import torch
 import wandb
@@ -23,18 +24,20 @@ from mnk_game.random_agent_mnkgame import RandomAgentMnkGame
 from mnk_game import get_agent
 from mnk_game.alphazero_net import MODELS
 from board_state.mnk_board import MnkBoard
+from utils.logger import setup_logger
 
 
 def temperature_decay(total_it, current_it, max_temp, min_temp):
     temp = max_temp - (max_temp - min_temp) * current_it / total_it
-    print(f"Current temperature: {temp}")
+    logging.info(f"Current temperature: {temp}")
     return temp
 
 
 def lr_decay(total_it, current_it, max_lr, min_lr):
     lr = max_lr - (max_lr - min_lr) * current_it / total_it
-    print(f"Current lr: {lr}")
+    logging.info(f"Current lr: {lr}")
     return lr
+
 
 def self_play(cfg, temperature, bot1_type, bot2_type, num_games,
               workers, net=None, get_data_from_all=False):
@@ -46,7 +49,7 @@ def self_play(cfg, temperature, bot1_type, bot2_type, num_games,
         ]
         res = pool.starmap(self_play_worker, args)
         res = [item for subres in res for item in subres]
-    print("Time taken: %.2f (s)" % (time.time() - s))
+    logging.info("Time taken: %.2f (s)" % (time.time() - s))
     return res
 
 
@@ -94,48 +97,6 @@ def self_play_worker(cfg, temperature, bot1_type, bot2_type,
     return training_data
 
 
-def self_play_old(cfg, temperature, bot1, bot2, num_games, get_data_from_all=False):
-    bot1.temperature = temperature
-    bot2.temperature = temperature
-    bot1.debug = False
-    bot2.debug = False
-    print("Self-playing %d games..." % num_games)
-    training_data = []
-    m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
-    for _ in tqdm(range(num_games)):
-        # clear last trees
-        bot1.root = None
-        bot2.root = None
-        try:
-            board = MnkBoard(m, n, k)
-            possible_pos = board.get_possible_pos()
-            turn = random.choice((-1, 1))
-            moves = []
-            res = 0
-            game_data = []
-            while not res and possible_pos:
-                if turn == -1:
-                    game = bot1
-                else:
-                    game = bot2
-                move, policy = game.solve(board, turn, moves)
-                bb = AlphaZeroMnkGame.bitboard_to_tensor(board.get_board(), m, n, "cpu")[0]
-                if isinstance(game, AlphaZeroMnkGame) or get_data_from_all:
-                    game_data.append((bb, turn, policy))
-                assert move in possible_pos, f"Invalid move: {move}, agent: {type(game)}"
-                board.put(turn, move)
-                moves.append(move)
-                possible_pos = board.get_possible_pos()
-                turn = -turn
-                res = board.check_endgame()
-
-            for board, turn, policy in game_data:
-                training_data.append((board, turn, policy, res))
-        except Exception as e:
-            traceback.print_exc()
-    return training_data
-
-
 class MnkDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, data, m, n):
         self.cfg = cfg
@@ -150,7 +111,7 @@ class MnkDataset(torch.utils.data.Dataset):
             if h not in self.hashes:
                 self.hashes.add(h)
                 new_data.append((board, turn, policy, res))
-        print("Removed %d duplicates" % (len(self.data) - len(new_data)))
+        logging.info("Removed %d duplicates" % (len(self.data) - len(new_data)))
         self.data = new_data
         # augmentation
         new_data = []
@@ -238,7 +199,7 @@ def train(data, cfg, lr, eps, net=None):
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
     device = cfg["bot"]["alphazero"]["device"]
     dataset = MnkDataset(cfg, data, m, n)
-    print(f"Training the network for {eps} epochs and {len(dataset)} data points...")
+    logging.info(f"Training the network for {eps} epochs and {len(dataset)} data points...")
 
     loader = DataLoader(
         dataset,
@@ -273,39 +234,8 @@ def train(data, cfg, lr, eps, net=None):
             loss.backward()
             optimizer.step()
 
-    print("Training loss:", loss.item())
+    logging.info("Training loss:", loss.item())
     return net, loss.item()
-
-
-def play_old(player1, player2, cfg):
-    m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
-    board = MnkBoard(m, n, k)
-    possible_pos = board.get_possible_pos()
-    moves = []
-    res = 0
-    while possible_pos:
-        move = player1.predict(board, 1, moves)
-
-        assert move in possible_pos
-        board.put(1, move)
-        moves.append(move)
-        res = board.check_endgame()
-        if res:
-            break
-        possible_pos = board.get_possible_pos()
-        if not possible_pos:
-            break
-
-        move = player2.predict(board, -1, moves)
-        assert move in possible_pos
-        board.put(-1, move)
-        moves.append(move)
-        res = board.check_endgame()
-        if res:
-            break
-        possible_pos = board.get_possible_pos()
-
-    return res
 
 
 def play_worker(cfg, bot1_type, bot2_type, net1=None, net2=None):
@@ -351,7 +281,7 @@ def play(cfg, bot1_type, bot2_type, num_games,
             for _ in range(num_games)
         ]
         res = pool.starmap(play_worker, args)
-    print("Time taken: %.2f (s)" % (time.time() - s))
+    logging.info("Time taken: %.2f (s)" % (time.time() - s))
     res = np.array(res, dtype=float)
     res = (res + 1) / 2
     return float(np.mean(res))  # win rate of Bot 2
@@ -364,82 +294,27 @@ def arena(best_net, new_net, cfg, vs_mcts):
     eval = cfg["bot"]["alphazero"]["eval"]
     assert eval in ("vs_last", "vs_mcts")
     if eval == "vs_mcts" and vs_mcts[0] > 50.0:
-        print("AlphaZero agent is now stronger than MCTS agent. Switch to vs_last.")
+        logging.info("AlphaZero agent is now stronger than MCTS agent. Switch to vs_last.")
         cfg["bot"]["alphazero"]["eval"] = "vs_last"
         eval = "vs_last"
-    print("Arena: ")
+    logging.info("Arena: ")
     evolved = True
     if best_net is not None:
-        print("Versus best iteration's net:")
+        logging.info("Versus best iteration's net:")
         winrate = play(cfg, "alphazero", "alphazero", games,
             workers, net1=best_net, net2=new_net) * 100
-        print("Winrate against best iteration: %.2f%%" % winrate)
+        logging.info("Winrate against best iteration: %.2f%%" % winrate)
         if eval == "vs_last":
             evolved = winrate > 50.0
 
-    print("Versus pure MCTS:")
+    logging.info("Versus pure MCTS:")
     winrate = play(cfg, "mcts", "alphazero", games, workers, net2=new_net) * 100
     if eval == "vs_mcts":
         evolved = winrate > vs_mcts[0]
     if winrate > vs_mcts[0]:
         vs_mcts[0] = winrate
     vs_mcts[1] = winrate
-    print("Winrate against pure MCTS: %.2f%%" % winrate)
-    return evolved
-
-
-def arena_old(best_net, new_net, cfg, vs_mcts):
-    m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
-    games = cfg["bot"]["alphazero"]["arena_games"]
-    new_game = AlphaZeroMnkGame(m, n, k, **cfg["bot"]["alphazero"])
-    new_game.init_net(new_net)
-    eval = cfg["bot"]["alphazero"]["eval"]
-    assert eval in ("vs_last", "vs_mcts")
-    if eval == "vs_mcts" and vs_mcts[0] > 50.0:
-        print("AlphaZero agent is now stronger than MCTS agent. Switch to vs_last.")
-        cfg["bot"]["alphazero"]["eval"] = "vs_last"
-        eval = "vs_last"
-    print("Arena: ")
-    evolved = True
-    if best_net is not None:
-        print("Versus best iteration's net:")
-        best_game = AlphaZeroMnkGame(m, n, k, **cfg["bot"]["alphazero"])
-        best_game.init_net(best_net)
-        total = []
-        for _ in tqdm(range(games//2)):
-            res = play(new_game, best_game, cfg)
-            if res == 1: total.append(1)
-            elif res == -1: total.append(0)
-            else: total.append(0.5)
-            res = play(best_game, new_game, cfg)
-            if res == -1: total.append(1)
-            elif res == 1: total.append(0)
-            else: total.append(0.5)
-        percent = sum(total) / len(total) * 100 if total else 50.0
-        print("Winrate against best iteration: %.2f%%" % percent)
-        if eval == "vs_last":
-            evolved = percent > 50.0
-
-    print("Versus pure MCTS:")
-    mcts = MonteCarloTreeSearchMnkGame(**cfg["bot"]["mcts"])
-    mcts.debug = False
-    total = []
-    for _ in tqdm(range(games//2)):
-        res = play(new_game, mcts, cfg)
-        if res == 1: total.append(1)
-        elif res == -1: total.append(0)
-        else: total.append(0.5)
-        res = play(mcts, new_game, cfg)
-        if res == -1: total.append(1)
-        elif res == 1: total.append(0)
-        else: total.append(0.5)
-    percent = sum(total) / len(total) * 100
-    if eval == "vs_mcts":
-        evolved = percent > vs_mcts[0]
-    if percent > vs_mcts[0]:
-        vs_mcts[0] = percent
-    vs_mcts[1] = percent
-    print("Winrate against pure MCTS: %.2f%%" % percent)
+    logging.info("Winrate against pure MCTS: %.2f%%" % winrate)
     return evolved
 
 
@@ -448,7 +323,7 @@ def main(cfg, opt):
     best_net = None
     device = cfg["bot"]["alphazero"]["device"]
     if device == "cuda" and not torch.cuda.is_available():
-        print("CUDA is not available. Using CPU instead.")
+        logging.warning("CUDA is not available. Using CPU instead.")
         device = "cpu"
         cfg["bot"]["alphazero"]["device"] = device
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
@@ -465,6 +340,7 @@ def main(cfg, opt):
     )
     wandb.save(opt.cfg)
     shutil.copy(opt.cfg, exp_dir)
+    setup_logger(os.path.join(exp_dir, "train.log"))
 
     workers = cfg["bot"]["alphazero"]["workers"]
     num_it = cfg["bot"]["alphazero"]["it"]
@@ -478,7 +354,7 @@ def main(cfg, opt):
     cfg["bot"]["mcts"]["processes"] = 1
     cfg["bot"]["mcts"]["num_simulations"] = 1
     if cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"] > 0:
-        print("Bootstrapping the weights by self-playing pure MCTS...")
+        logging.info("Bootstrapping the weights by self-playing pure MCTS...")
         training_data = self_play(cfg, temperature, "mcts", "mcts",
             cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"],
             workers, None, True)
@@ -501,8 +377,8 @@ def main(cfg, opt):
 
     # main training loop
     for it in range(num_it):
-        print("\n=================")
-        print(f"Iteration {it+1}:")
+        logging.info("\n=================")
+        logging.info(f"Iteration {it+1}:")
         temperature = temperature_decay(
             num_it, it+1, *cfg["bot"]["alphazero"]["temperature"])
         lr = lr_decay(
@@ -512,7 +388,7 @@ def main(cfg, opt):
         )
         # AlphaZero vs AlphaZero
         games = cfg["bot"]["alphazero"]["self_play_games"]
-        print(f"Self-playing AlphaZero vs AlphaZero for {games} games...")
+        logging.info(f"Self-playing AlphaZero vs AlphaZero for {games} games...")
         if net is not None:
             net.to("cpu")  # for multiprocessing
             net.share_memory()
@@ -520,14 +396,14 @@ def main(cfg, opt):
             games, workers, net, False)
         # AlphaZero vs MCTS
         games = cfg["bot"]["alphazero"]["self_play_games_vs_mcts"]
-        print(f"Self-playing AlphaZero vs MCTS for {games} games...")
+        logging.info(f"Self-playing AlphaZero vs MCTS for {games} games...")
         training_data.extend(
             self_play(cfg, temperature, "alphazero", "mcts",
                 games, workers, net, False)
         )
         # AlphaZero vs Random
         games = cfg["bot"]["alphazero"]["self_play_games_vs_random"]
-        print(f"Self-playing AlphaZero vs Random agent for {games} games...")
+        logging.info(f"Self-playing AlphaZero vs Random agent for {games} games...")
         training_data.extend(
             self_play(cfg, temperature, "alphazero", "random",
                 games, workers, net, False)
@@ -545,11 +421,11 @@ def main(cfg, opt):
 
         # save net
         torch.save(net.state_dict(), os.path.join(exp_dir, f"it{it+1}.pth"))
-        print(f"Saved weights to it{it+1}.pth")
+        logging.info(f"Saved weights to it{it+1}.pth")
         if evolved or best_net is None:
             best_net = deep_copy_net(net, cfg)
             torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
-            print(f"Saved weights to best.pth")
+            logging.info(f"Saved weights to best.pth")
         wandb.log({
             "winrate_vs_mcts": vs_mcts[1],
             "learning_rate": lr,
@@ -567,7 +443,7 @@ if __name__ == "__main__":
         try:
             cfg = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
-            print(exc)
+            logging.error(exc)
             sys.exit()
     main(cfg, opt)
 

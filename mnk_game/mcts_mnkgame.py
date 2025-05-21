@@ -1,6 +1,7 @@
 import time
 import random
 import multiprocessing
+import logging
 from typing import Tuple
 
 import numpy as np
@@ -28,13 +29,13 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
     def update_tree(self, two_last_moves):
         try:
             if self.debug:
-                print("Inheriting previous tree root...")
+                logging.info("Inheriting previous tree root...")
             m1, m2 = two_last_moves
             self.root = self.root.children[m1].children[m2]
             return True
         except KeyError:
             if self.debug:
-                print("Moves not found in previous tree. Initializing new tree...")
+                logging.info("Moves not found in previous tree. Initializing new tree...")
             return False
 
     def predict(self, board, turn, moves):
@@ -44,7 +45,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         start = time.time()
         if len(moves) < 2 or self.root is None:
             if self.debug:
-                print("Initializing new tree...")
+                logging.info("Initializing new tree...")
             self.root = MnkState(board, turn, self.policy, None, None)
         else:
             if not self.update_tree(moves[-2:]):
@@ -94,13 +95,13 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
             if self.debug:
                 top_k = 5 if len(children) >= 5 else len(children)
                 children.sort(key=lambda child: -child[1])
-                print("\nTop %i moves:" % top_k)
+                logging.info("\nTop %i moves:" % top_k)
                 for child, score in children[:5]:
-                    print("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
+                    logging.info("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
                         (score, child.r, child.n)
                     )
-                print("Played %i rollouts!" % self.rollout_count)
-                print("Total: %i rollouts (inherited from previous trees)!" %
+                logging.info("Played %i rollouts!" % self.rollout_count)
+                logging.info("Total: %i rollouts (inherited from previous trees)!" %
                     self.total_rollout)
         return best_child.last_move if (best_child and self.total_rollout > 0) else None, \
             self.get_p()

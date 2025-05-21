@@ -42,13 +42,13 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     def update_tree(self, two_last_moves):
         try:
             if self.debug:
-                print("Inheriting previous tree root...")
+                logging.info("Inheriting previous tree root...")
             m1, m2 = two_last_moves
             self.root = self.root.children[m1].children[m2]
             return True
         except KeyError:
             if self.debug:
-                print("Moves not found in previous tree. Initializing new tree...")
+                logging.info("Moves not found in previous tree. Initializing new tree...")
             return False
 
     @staticmethod
@@ -68,7 +68,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         start = time.time()
         if len(moves) < 2 or self.root is None:
             if self.debug:
-                print("Initializing new tree...")
+                logging.info("Initializing new tree...")
             self.root = MnkState(board, turn, "blah", None, None)
         else:
             if not self.update_tree(moves[-2:]):
@@ -106,9 +106,9 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             children.sort(key=lambda child: -child[1])
             k = 5
             children = children[:k] if len(children) >= k else children
-            print(f"\nTop {k} moves:")
+            logging.info(f"\nTop {k} moves:")
             for child, score in children:
-                print("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
+                logging.info("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
                     (score, child.r, child.n)
                 )
         return (i, j), policy
@@ -141,12 +141,12 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             moves.sort(key=lambda move: -move[2])
             k = 5
             moves = moves[:k] if len(moves) >= k else moves
-            print(f"\nTop {k} moves:")
+            logging.info(f"\nTop {k} moves:")
             for i, j, p in moves:
-                print(f"Move: ({i}, {j}), prob: %.2f" % p)
+                logging.info(f"Move: ({i}, {j}), prob: %.2f" % p)
             winrate = (self.last_predict_value + 1)/2
             winrate *= turn
-            print("Winrate = %.2f" % winrate)
+            logging.info("Winrate = %.2f" % winrate)
 
         return best_move
 

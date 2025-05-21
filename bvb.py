@@ -1,20 +1,23 @@
 import argparse
 import yaml
 import sys
+import logging
 from gui.mnk_gui import MnkGUI
 from mnk_game.mcts_mnkgame import MonteCarloTreeSearchMnkGame
 from mnk_game.alphazero_mnkgame import AlphaZeroMnkGame
 from mnk_game.alphazero_net import MODELS
+from utils.logger import setup_logger
 
 
 def main(cfg):
+    setup_logger()
     gui = MnkGUI(**cfg["board_game"])
     # gui.player1 = MonteCarloTreeSearchMnkGame(**cfg["bot"]["mcts"])
     import torch
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
     device = cfg["bot"]["alphazero"]["device"]
     if device == "cuda" and not torch.cuda.is_available():
-        print("CUDA is not available. Using CPU instead.")
+        logging.warning("CUDA is not available. Using CPU instead.")
         device = "cpu"
     cfg["bot"]["alphazero"]["device"] = device
     gui.player1 = AlphaZeroMnkGame(m, n, k, **cfg["bot"]["alphazero"])
@@ -46,6 +49,6 @@ if __name__ == "__main__":
         try:
             cfg = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
-            print(exc)
+            logging.error(exc)
             sys.exit()
     main(cfg)
