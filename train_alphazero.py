@@ -76,9 +76,10 @@ def self_play_worker(cfg, temperature, bot1_type, bot2_type,
             else:
                 game = bot2
             move, policy = game.solve(board, turn, moves)
-            bb = AlphaZeroMnkGame.bitboard_to_tensor(board.get_board(), m, n, "cpu")[0]
+            b = AlphaZeroMnkGame.bitboard_to_tensor(
+                board.get_board(), m, n, "cpu", turn)[0]
             if isinstance(game, AlphaZeroMnkGame) or get_data_from_all:
-                game_data.append((bb, turn, policy))
+                game_data.append((b, turn, policy))
             assert move in possible_pos, f"Invalid move: {move}, agent: {type(game)}"
             board.put(turn, move)
             moves.append(move)
@@ -110,29 +111,18 @@ class MnkDataset(torch.utils.data.Dataset):
             h = self.hash_board(np_board, turn)
             if h not in self.hashes:
                 self.hashes.add(h)
-                new_data.append((board, turn, policy, res))
+                new_data.append((np_board, turn, policy, res))
         logging.info("Removed %d duplicates" % (len(self.data) - len(new_data)))
         self.data = new_data
         # augmentation
         new_data = []
         for board, turn, policy, res in self.data:
-            board = board.clone().numpy()
             policy = self.policy_to_2d(policy)
             new_data.append((board, turn, policy, res))
             new_data.append(self.flip_lr(board, turn, policy, res))
             new_data.append(self.flip_ud(board, turn, policy, res))
-            new_data.append(self.flip_turn(board, turn, policy, res))
             new_data.append(
                 self.flip_ud(*self.flip_lr(board, turn, policy, res))
-            )
-            new_data.append(
-                self.flip_turn(*self.flip_lr(board, turn, policy, res))
-            )
-            new_data.append(
-                self.flip_turn(*self.flip_ud(board, turn, policy, res))
-            )
-            new_data.append(
-                self.flip_lr(*self.flip_turn(*self.flip_ud(board, turn, policy, res))),
             )
         self.data = new_data
 
@@ -168,10 +158,6 @@ class MnkDataset(torch.utils.data.Dataset):
         board = np.flip(board, axis=1)
         policy = np.flip(policy, axis=0)
         return board, turn, policy, res
-
-    def flip_turn(self, board, turn, policy, res):
-        board = np.flip(board, axis=0)
-        return board, turn, np.copy(policy), -res
 
     def __getitem__(self, idx):
         board, turn, policy, res = self.data[idx]
@@ -234,7 +220,7 @@ def train(data, cfg, lr, eps, net=None):
             loss.backward()
             optimizer.step()
 
-    logging.info("Training loss:", loss.item())
+    logging.info(f"Training loss: {loss.item()}")
     return net, loss.item()
 
 

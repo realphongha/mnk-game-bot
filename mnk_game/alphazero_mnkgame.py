@@ -59,9 +59,12 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         return node.r / (1 + node.n) + c * node.prior * math.sqrt(node.parent.n) / (1 + node.n)
 
     @staticmethod
-    def bitboard_to_tensor(bb, m, n, device):
+    def bitboard_to_tensor(bb, m, n, device, turn):
         board = to_board(bb, m, n)
-        tensor = torch.tensor(board).float().to(device)
+        # put current player in channel 0
+        if turn == -1:
+            board = np.flip(board, axis=0)
+        tensor = torch.tensor(board.copy()).float().to(device)
         return tensor.unsqueeze(0)
 
     @torch.no_grad()
@@ -110,7 +113,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             children = children[:k] if len(children) >= k else children
             logging.info(f"\nTop {k} moves:")
             for child, score in children:
-                logging.info("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
+                logging.info(f"Move: {child.last_move} - score: %.4f - w: %i - n: %i" %
                     (score, child.r, child.n)
                 )
         return (i, j), policy
@@ -118,7 +121,8 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     @torch.no_grad()
     def predict(self, board, turn, _moves):
         self.net.eval()
-        b = self.bitboard_to_tensor(board.get_board(), self.m, self.n, self.device)
+        b = self.bitboard_to_tensor(
+            board.get_board(), self.m, self.n, self.device, turn)
         policy, value = self.net(b)
         policy = F.softmax(policy, dim=-1)
         value = F.tanh(value)
@@ -146,9 +150,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             logging.info(f"\nTop {k} moves:")
             for i, j, p in moves:
                 logging.info(f"Move: ({i}, {j}), prob: %.2f" % p)
-            winrate = (self.last_predict_value + 1)/2
-            winrate *= turn
-            logging.info("Winrate = %.2f" % winrate)
+            logging.info("Winrate = %.2f" % self.last_predict_value)
 
         return best_move
 
@@ -163,12 +165,13 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     def expansion(self, node):
         res = node.board.check_endgame()
         if res:
-            return res
+            return -1.0
         states = node.get_next_states()
         if not states:
             return 0.0
         policy, value = self.net(
-            self.bitboard_to_tensor(node.board.get_board(), self.m, self.n, self.device)
+            self.bitboard_to_tensor(node.board.get_board(), self.m, self.n,
+                                    self.device, node.turn)
         )
         policy = F.softmax(policy, dim=-1)
         value = F.tanh(value)
@@ -186,8 +189,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         return value.item()
 
     def backpropagation(self, node, value):
-        # node.turn means the next player
-        reward = abs(node.turn - value) / 2
+        reward = value
         while node is not None:
             node.n += 1
             node.r += reward

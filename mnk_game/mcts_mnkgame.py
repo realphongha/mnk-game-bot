@@ -97,7 +97,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
                 children.sort(key=lambda child: -child[1])
                 logging.info("\nTop %i moves:" % top_k)
                 for child, score in children[:5]:
-                    logging.info("Move:", child.last_move, "- score: %.4f - w: %i - n: %i" %
+                    logging.info(f"Move: {child.last_move} - score: %.4f - w: %i - n: %i" %
                         (score, child.r, child.n)
                     )
                 logging.info("Played %i rollouts!" % self.rollout_count)

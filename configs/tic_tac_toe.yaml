@@ -30,18 +30,18 @@ bot:
     mcts_warm_start:
       self_play_games: 0
       lr: 0.005
-      eps: 5 
+      eps: 2
     temperature: [1.0, 0.01]
     draw_reward: -0.1  # discourage draw
     lr_scheduler:
       init_lr: 0.01
       min_lr: 0.0001
     eval: vs_last  # vs_mcts, vs_last
-    self_play_games: 32
-    self_play_games_vs_random: 32
-    self_play_games_vs_mcts: 32
-    eps: 2
-    arena_games: 64
+    self_play_games: 16
+    self_play_games_vs_random: 16
+    self_play_games_vs_mcts: 16
+    eps: 1
+    arena_games: 32
   mcts:
     max_thinking_time: 0.1  # in seconds
     max_rollout: 1000000000
