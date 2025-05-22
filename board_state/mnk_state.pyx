@@ -36,12 +36,14 @@ cdef class MnkState:
         pos = self.board.get_possible_pos()
         states = []
         for p in pos:
-            assert p not in self.children
-            new_board = self.board.duplicate()
-            new_board.put(self.turn, p, False)
-            new_state = MnkState(new_board, -self.turn, self.policy, 
-                p, self)
-            self.children[p] = new_state
+            if p not in self.children:
+                new_board = self.board.duplicate()
+                new_board.put(self.turn, p, False)
+                new_state = MnkState(new_board, -self.turn, self.policy, 
+                    p, self)
+                self.children[p] = new_state
+            else:
+                new_state = self.children[p]
             states.append(new_state)
         return states
 

@@ -47,6 +47,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
                 logging.info("Inheriting previous tree root...")
             m1, m2 = two_last_moves
             self.root = self.root.children[m1].children[m2]
+            self.root.parent = None
             return True
         except KeyError:
             if self.debug:
@@ -56,7 +57,9 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     @staticmethod
     def score(node, c):
         # puct
-        return node.r / (1 + node.n) + c * node.prior * math.sqrt(node.parent.n) / (1 + node.n)
+        v = node.r / node.n if node.n > 0 else 0.0
+        e = c * node.prior * math.sqrt(node.parent.n) / (1 + node.n)
+        return v + e
 
     @staticmethod
     def bitboard_to_tensor(bb, m, n, device, turn):
@@ -78,7 +81,32 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         else:
             if not self.update_tree(moves[-2:]):
                 self.root = MnkState(board, turn, "blah", None, None)
-
+        policy, value = self.net(
+            self.bitboard_to_tensor(self.root.board.get_board(), self.m, self.n,
+                                    self.device, self.root.turn)
+        )
+        policy = F.softmax(policy, dim=-1)
+        policy = policy[0]
+        value = value[0]
+        dirichlet_noise = np.random.dirichlet(
+            [self.dirichlet_alpha] * self.m * self.n
+        )
+        dirichlet_noise = torch.tensor(dirichlet_noise).to(self.device)
+        policy = (1 - self.dirichlet_eps) * policy + self.dirichlet_eps * dirichlet_noise
+        moves = set()
+        states = self.root.get_next_states()
+        for state in states:
+            i, j = state.last_move
+            moves.add((i, j))
+        for i in range(self.m):
+            for j in range(self.n):
+                if (i, j) not in moves:
+                    policy[i*self.n + j] = 0
+        if policy.sum() > 0:
+            policy = policy / policy.sum()
+        for state in states:
+            i, j = state.last_move
+            state.prior = policy[i*self.n + j].item()
         while time.time()-start < self.max_thinking_time:
             self.loop()
         return self.get_results()
@@ -100,8 +128,8 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             i, j = move // self.n, move % self.n
         else:
             policy_ = np.power(policy_, 1.0/self.temperature)
-            policy_ /= policy_.sum()
             assert policy_.sum() > 0, "No backpropagation found. Please increase max_thinking_time."
+            policy_ /= policy_.sum()
             move_i = np.random.choice([i for i in range(len(policy_))], p=policy_)
             i, j = nodes[move_i].last_move
         if self.debug:
@@ -125,7 +153,6 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             board.get_board(), self.m, self.n, self.device, turn)
         policy, value = self.net(b)
         policy = F.softmax(policy, dim=-1)
-        value = F.tanh(value)
         policy = policy[0]
         self.last_predict_value = value[0]
         possible_move = set(board.get_possible_pos())
@@ -150,7 +177,8 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             logging.info(f"\nTop {k} moves:")
             for i, j, p in moves:
                 logging.info(f"Move: ({i}, {j}), prob: %.2f" % p)
-            logging.info("Winrate = %.2f" % self.last_predict_value)
+            wr = (self.last_predict_value + 1) * 50
+            logging.info("Winrate = %.2f%%" % wr)
 
         return best_move
 
@@ -165,7 +193,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     def expansion(self, node):
         res = node.board.check_endgame()
         if res:
-            return -1.0
+            return 1.0 if res == node.turn else -1.0
         states = node.get_next_states()
         if not states:
             return 0.0
@@ -174,26 +202,29 @@ class AlphaZeroMnkGame(MnkGameBotBase):
                                     self.device, node.turn)
         )
         policy = F.softmax(policy, dim=-1)
-        value = F.tanh(value)
         policy = policy[0]
         value = value[0]
-        if node == self.root:
-            dirichlet_noise = np.random.dirichlet(
-                [self.dirichlet_alpha] * self.m * self.n
-            )
-            dirichlet_noise = torch.tensor(dirichlet_noise).to(self.device)
-            policy = (1 - self.dirichlet_eps) * policy + self.dirichlet_eps * dirichlet_noise
+        moves = set()
+        for state in states:
+            i, j = state.last_move
+            moves.add((i, j))
+        for i in range(self.m):
+            for j in range(self.n):
+                if (i, j) not in moves:
+                    policy[i*self.n + j] = 0
+        if policy.sum() > 0:
+            policy = policy / policy.sum()
         for state in states:
             i, j = state.last_move
             state.prior = policy[i*self.n + j].item()
         return value.item()
 
     def backpropagation(self, node, value):
-        reward = value
+        reward = -value
         while node is not None:
             node.n += 1
             node.r += reward
-            reward = 1-reward
+            reward = -reward
             node = node.parent
 
     def loop(self):

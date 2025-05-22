@@ -59,6 +59,7 @@ class ResidualNet(nn.Module):
             nn.Flatten(),
             nn.Dropout(0.5),
             nn.Linear(m * n, 1),
+            nn.Tanh()
         )
 
     def init_weights(self):

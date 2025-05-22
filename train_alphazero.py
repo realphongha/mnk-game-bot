@@ -27,77 +27,6 @@ from board_state.mnk_board import MnkBoard
 from utils.logger import setup_logger
 
 
-def temperature_decay(total_it, current_it, max_temp, min_temp):
-    temp = max_temp - (max_temp - min_temp) * current_it / total_it
-    logging.info(f"Current temperature: {temp}")
-    return temp
-
-
-def lr_decay(total_it, current_it, max_lr, min_lr):
-    lr = max_lr - (max_lr - min_lr) * current_it / total_it
-    logging.info(f"Current lr: {lr}")
-    return lr
-
-
-def self_play(cfg, temperature, bot1_type, bot2_type, num_games,
-              workers, net=None, get_data_from_all=False):
-    s = time.time()
-    with mp.Pool(workers) as pool:
-        args = [
-            (cfg, temperature, bot1_type, bot2_type, net, get_data_from_all)
-            for _ in range(num_games)
-        ]
-        res = pool.starmap(self_play_worker, args)
-        res = [item for subres in res for item in subres]
-    logging.info("Time taken: %.2f (s)" % (time.time() - s))
-    return res
-
-
-def self_play_worker(cfg, temperature, bot1_type, bot2_type,
-                     net=None, get_data_from_all=False):
-    bot1 = get_agent(bot1_type, cfg, net)
-    bot2 = get_agent(bot2_type, cfg, net)
-    bot1.temperature = temperature
-    bot2.temperature = temperature
-    bot1.debug = False
-    bot2.debug = False
-    training_data = []
-    m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
-    try:
-        board = MnkBoard(m, n, k)
-        possible_pos = board.get_possible_pos()
-        turn = random.choice((-1, 1))
-        moves = []
-        res = 0
-        game_data = []
-        while not res and possible_pos:
-            if turn == -1:
-                game = bot1
-            else:
-                game = bot2
-            move, policy = game.solve(board, turn, moves)
-            b = AlphaZeroMnkGame.bitboard_to_tensor(
-                board.get_board(), m, n, "cpu", turn)[0]
-            if isinstance(game, AlphaZeroMnkGame) or get_data_from_all:
-                game_data.append((b, turn, policy))
-            assert move in possible_pos, f"Invalid move: {move}, agent: {type(game)}"
-            board.put(turn, move)
-            moves.append(move)
-            possible_pos = board.get_possible_pos()
-            turn = -turn
-            res = board.check_endgame()
-
-        for board, turn, policy in game_data:
-            training_data.append((board, turn, policy, res))
-    except Exception as e:
-        traceback.print_exc()
-    if net is not None:
-        net.to("cpu")
-        del net
-    torch.cuda.empty_cache()
-    return training_data
-
-
 class MnkDataset(torch.utils.data.Dataset):
     def __init__(self, cfg, data, m, n):
         self.cfg = cfg
@@ -181,6 +110,77 @@ def deep_copy_net(net, cfg):
     return new_net
 
 
+def temperature_decay(total_it, current_it, max_temp, min_temp):
+    temp = max_temp - (max_temp - min_temp) * current_it / total_it
+    logging.info(f"Current temperature: {temp}")
+    return temp
+
+
+def lr_decay(total_it, current_it, max_lr, min_lr):
+    lr = max_lr - (max_lr - min_lr) * current_it / total_it
+    logging.info(f"Current lr: {lr}")
+    return lr
+
+
+def self_play(cfg, temperature, bot1_type, bot2_type, num_games,
+              workers, net=None, get_data_from_all=False):
+    s = time.time()
+    with mp.Pool(workers) as pool:
+        args = [
+            (cfg, temperature, bot1_type, bot2_type, net, get_data_from_all)
+            for _ in range(num_games)
+        ]
+        res = pool.starmap(self_play_worker, args)
+        res = [item for subres in res for item in subres]
+    logging.info("Time taken: %.2f (s)" % (time.time() - s))
+    return res
+
+
+def self_play_worker(cfg, temperature, bot1_type, bot2_type,
+                     net=None, get_data_from_all=False):
+    bot1 = get_agent(bot1_type, cfg, net)
+    bot2 = get_agent(bot2_type, cfg, net)
+    bot1.temperature = temperature
+    bot2.temperature = temperature
+    bot1.debug = False
+    bot2.debug = False
+    training_data = []
+    m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
+    try:
+        board = MnkBoard(m, n, k)
+        possible_pos = board.get_possible_pos()
+        turn = random.choice((-1, 1))
+        moves = []
+        res = 0
+        game_data = []
+        while not res and possible_pos:
+            if turn == -1:
+                game = bot1
+            else:
+                game = bot2
+            move, policy = game.solve(board, turn, moves)
+            b = AlphaZeroMnkGame.bitboard_to_tensor(
+                board.get_board(), m, n, "cpu", turn)[0]
+            if isinstance(game, AlphaZeroMnkGame) or get_data_from_all:
+                game_data.append((b, turn, policy))
+            assert move in possible_pos, f"Invalid move: {move}, agent: {type(game)}"
+            board.put(turn, move)
+            moves.append(move)
+            possible_pos = board.get_possible_pos()
+            turn = -turn
+            res = board.check_endgame()
+
+        for board, turn, policy in game_data:
+            training_data.append((board, turn, policy, res * turn))
+    except Exception as e:
+        traceback.print_exc()
+    if net is not None:
+        net.to("cpu")
+        del net
+    torch.cuda.empty_cache()
+    return training_data
+
+
 def train(data, cfg, lr, eps, net=None):
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
     device = cfg["bot"]["alphazero"]["device"]
@@ -248,6 +248,7 @@ def play_worker(cfg, bot1_type, bot2_type, net1=None, net2=None):
         moves.append(move)
         res = board.check_endgame()
         possible_pos = board.get_possible_pos()
+        turn = -turn
     if net1 is not None:
         net1.to("cpu")
         del net1

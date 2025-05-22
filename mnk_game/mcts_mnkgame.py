@@ -32,6 +32,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
                 logging.info("Inheriting previous tree root...")
             m1, m2 = two_last_moves
             self.root = self.root.children[m1].children[m2]
+            self.root.parent = None
             return True
         except KeyError:
             if self.debug:
@@ -81,7 +82,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         if self.total_rollout > 0 and len(self.root.children.values()) > 0:
             children = []
             for child in self.root.children.values():
-                children.append((child, self.score(child, 0)))
+                children.append((child, child.n))
             if self.temperature <= 0.05:
                 best_child = max(children, key=lambda child: child[1])[0]
             else:
@@ -96,27 +97,15 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
                 top_k = 5 if len(children) >= 5 else len(children)
                 children.sort(key=lambda child: -child[1])
                 logging.info("\nTop %i moves:" % top_k)
-                for child, score in children[:5]:
-                    logging.info(f"Move: {child.last_move} - score: %.4f - w: %i - n: %i" %
-                        (score, child.r, child.n)
+                for child, _ in children[:5]:
+                    logging.info(f"Move: {child.last_move} - winrate: %.4f - w: %i - n: %i" %
+                        (child.r/child.n, child.r, child.n)
                     )
                 logging.info("Played %i rollouts!" % self.rollout_count)
                 logging.info("Total: %i rollouts (inherited from previous trees)!" %
                     self.total_rollout)
         return best_child.last_move if (best_child and self.total_rollout > 0) else None, \
             self.get_p()
-
-    def soft_selection(self, node):
-        if self.temperature <= 0.05:
-            return max(node.children.values(), key=lambda child: self.score(child, 0))
-        p = [n.n for n in node.children.values()]
-        if np.sum(p) == 0.0:
-            p = [1.0/len(p)] * len(p)
-        else:
-            p = np.power(p, 1.0 / self.temperature)
-            p /= np.sum(p)
-        return np.random.choice(list(node.children.values()), p=p)
-
 
     def selection(self):
         node = self.root
