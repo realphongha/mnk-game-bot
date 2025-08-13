@@ -17,10 +17,6 @@ pygame.init()
 
 
 class MnkGUI:
-    PLAYER1_TURN = 1
-    PLAYER2_TURN = -1
-    ENDED = 0
-
     def __init__(
         self,
         m: int,
@@ -172,25 +168,21 @@ class MnkGUI:
     def change_state(self):
         res = self.board.check_endgame()
         if res == 0:
-            if self.state == MnkGUI.PLAYER1_TURN:
-                self.state = MnkGUI.PLAYER2_TURN
-            else:
-                self.state = MnkGUI.PLAYER1_TURN
+            self.state = -self.state
         else:
-            self.state = MnkGUI.ENDED
-
+            self.state = 0
         return res
 
     def main(self):
         res = 0
-        self.state = random.choice((MnkGUI.PLAYER1_TURN, MnkGUI.PLAYER2_TURN))
+        self.state = random.choice((1, -1))
         while True:
             pygame.mouse.set_cursor(self.cursor)
             self.window.fill(colors.PAPER_WHITE_COLOR)
             possible_pos = self.board.get_possible_pos()
-            if self.state != MnkGUI.ENDED:
+            if self.state != 0:
                 if len(possible_pos) == 0:
-                    self.state = MnkGUI.ENDED
+                    self.state = 0
                     res = 0
             rects = self.render_board()
             try:
@@ -201,8 +193,8 @@ class MnkGUI:
                         sys.exit()
                     events.append(event)
 
-                if self.state == MnkGUI.PLAYER1_TURN or self.state == MnkGUI.PLAYER2_TURN:
-                    self.player = self.player1 if self.state == MnkGUI.PLAYER1_TURN else self.player2
+                if self.state == 1 or self.state == -1:
+                    self.player = self.player1 if self.state == 1 else self.player2
                     if self.player is None:
                         # read input from human player
                         for event in events:
@@ -224,7 +216,7 @@ class MnkGUI:
                         self.bot_move(possible_pos)
                         res = self.change_state()
                         raise exception.Break
-                elif self.state == MnkGUI.ENDED:
+                elif self.state == 0:
                     self.render_endgame_noti(res)
                 else:
                     raise NotImplementedError(
