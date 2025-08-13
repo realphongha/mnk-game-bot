@@ -9,6 +9,7 @@ import random
 import hashlib
 import shutil
 import logging
+from collections import Counter
 
 import torch
 import wandb
@@ -34,18 +35,10 @@ class MnkDataset(torch.utils.data.Dataset):
         self.draw_reward = cfg["bot"]["alphazero"]["draw_reward"]
         self.m, self.n = m, n
         self.hashes = set()
-        new_data = []
-        for board, turn, policy, res in self.data:
-            np_board = board.clone().numpy()
-            h = self.hash_board(np_board, turn)
-            if h not in self.hashes:
-                self.hashes.add(h)
-                new_data.append((np_board, turn, policy, res))
-        logging.info("Removed %d duplicates" % (len(self.data) - len(new_data)))
-        self.data = new_data
         # augmentation
         new_data = []
         for board, turn, policy, res in self.data:
+            board = board.clone().numpy()
             policy = self.policy_to_2d(policy)
             new_data.append((board, turn, policy, res))
             new_data.append(self.flip_lr(board, turn, policy, res))
@@ -54,6 +47,28 @@ class MnkDataset(torch.utils.data.Dataset):
                 self.flip_ud(*self.flip_lr(board, turn, policy, res))
             )
         self.data = new_data
+        new_data = []
+        for board, turn, policy, res in self.data:
+            h = self.hash_board(board, turn)
+            if h not in self.hashes:
+                self.hashes.add(h)
+                new_data.append((board, turn, policy, res))
+        logging.info("Removed %d duplicates" % (len(self.data) - len(new_data)))
+        self.data = new_data
+        data_by_res = {0: [], -1: [], 1: []}
+        for d in self.data:
+            data_by_res[d[3]].append(d)
+        count_by_res = {res: len(data) for res, data in data_by_res.items()}
+        logging.info(f"Data by results: {count_by_res}")
+        max_by_res = max(count_by_res.values())
+        logging.info("Duplicating data to balance classes...")
+        for res in [-1, 0, 1]:
+            if count_by_res[res] == 0:
+                logging.warning("No data for result %d" % res)
+                continue
+            while count_by_res[res] < max_by_res:
+                self.data.append(random.choice(data_by_res[res]))
+                count_by_res[res] += 1
 
     def __len__(self):
         return len(self.data)

@@ -193,7 +193,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     def expansion(self, node):
         res = node.board.check_endgame()
         if res:
-            return 1.0 if res == node.turn else -1.0
+            return -1.0  # node.turn player lost
         states = node.get_next_states()
         if not states:
             return 0.0
@@ -204,14 +204,11 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         policy = F.softmax(policy, dim=-1)
         policy = policy[0]
         value = value[0]
-        moves = set()
-        for state in states:
-            i, j = state.last_move
-            moves.add((i, j))
+        moves = {state.last_move for state in states}
         for i in range(self.m):
             for j in range(self.n):
                 if (i, j) not in moves:
-                    policy[i*self.n + j] = 0
+                    policy[i*self.n + j] = 0.0
         if policy.sum() > 0:
             policy = policy / policy.sum()
         for state in states:
