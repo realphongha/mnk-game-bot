@@ -1,5 +1,5 @@
 board_game:
-  name: gomoku
+  name: gomoku11x11
   m: 11
   n: 11
   k: 5
