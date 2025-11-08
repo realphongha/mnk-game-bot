@@ -1,8 +1,0 @@
-pygame==2.1.2
-torch==2.3.1
-Cython==0.29.23
-gmpy2==2.2.1
-numpy==1.21.0
-wandb
-PyYAML
-tqdm

@@ -1,0 +1,24 @@
+[project]
+name = "mnk-game-bot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "cython==0.29.23",
+    "gmpy2==2.2.1",
+    "numpy==1.21.0",
+    "pygame==2.1.2",
+    "pyyaml>=6.0.3",
+    "torch==2.5.1",
+    "tqdm>=4.67.1",
+    "wandb>=0.22.3",
+]
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu121" },
+]
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
