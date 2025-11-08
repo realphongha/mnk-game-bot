@@ -12,7 +12,6 @@ import logging
 from collections import Counter
 
 import torch
-import wandb
 import numpy as np
 import torch.multiprocessing as mp
 mp.set_start_method("spawn", force=True)
@@ -333,14 +332,16 @@ def main(cfg, opt):
     exp_dir = os.path.join(cfg["bot"]["alphazero"]["exp_dir"],
                            cfg["board_game"]["name"] + "_" + date_time_str)
     os.makedirs(exp_dir)
-    wandb.init(
-        project="mnk-alphazero",
-        name=cfg["board_game"]["name"] + "_" + date_time_str,
-        config={
-            "name": cfg["board_game"]["name"], "m": m, "n": n, "k": k,
-        }
-    )
-    wandb.save(opt.cfg)
+    if not opt.no_wandb:
+        import wandb
+        wandb.init(
+            project="mnk-alphazero",
+            name=cfg["board_game"]["name"] + "_" + date_time_str,
+            config={
+                "name": cfg["board_game"]["name"], "m": m, "n": n, "k": k,
+            }
+        )
+        wandb.save(opt.cfg)
     shutil.copy(opt.cfg, exp_dir)
     setup_logger(os.path.join(exp_dir, "train.log"))
 
@@ -370,12 +371,13 @@ def main(cfg, opt):
         best_net = deep_copy_net(net, cfg)
         torch.save(net.state_dict(), os.path.join(exp_dir, f"it0.pth"))
         torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
-        wandb.log({
-            "winrate_vs_mcts": vs_mcts[1],
-            "learning_rate": cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
-            "temperature": temperature,
-            "train_loss": loss
-        })
+        if not opt.no_wandb:
+            wandb.log({
+                "winrate_vs_mcts": vs_mcts[1],
+                "learning_rate": cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
+                "temperature": temperature,
+                "train_loss": loss
+            })
 
     # main training loop
     for it in range(num_it):
@@ -428,18 +430,21 @@ def main(cfg, opt):
             best_net = deep_copy_net(net, cfg)
             torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
             logging.info(f"Saved weights to best.pth")
-        wandb.log({
-            "winrate_vs_mcts": vs_mcts[1],
-            "learning_rate": lr,
-            "temperature": temperature,
-            "train_loss": loss
-        })
+        if not opt.no_wandb:
+            wandb.log({
+                "winrate_vs_mcts": vs_mcts[1],
+                "learning_rate": lr,
+                "temperature": temperature,
+                "train_loss": loss
+            })
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='configs/tic_tac_toe.yaml',
                         help='path to config file')
+    parser.add_argument('--no-wandb', default=False, action='store_true',
+                        help='disable wandb')
     opt = parser.parse_args()
     with open(opt.cfg, "r") as stream:
         try:
