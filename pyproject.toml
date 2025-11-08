@@ -10,6 +10,7 @@ dependencies = [
     "numpy==1.21.0",
     "pygame==2.1.2",
     "pyyaml>=6.0.3",
+    "setuptools>=80.9.0",
     "torch==2.5.1",
     "tqdm>=4.67.1",
     "wandb>=0.22.3",

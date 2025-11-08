@@ -36,7 +36,7 @@ Go inside the repo: `cd mnk-game-bot`
 - Python 3.10
 - Requirements:
 ``` bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Compile Cython file
