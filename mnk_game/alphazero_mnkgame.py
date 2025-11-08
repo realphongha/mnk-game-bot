@@ -224,6 +224,18 @@ class AlphaZeroMnkGame(MnkGameBotBase):
             reward = -reward
             node = node.parent
 
+        current_node = node
+        while current_node is not None:
+            current_node.n += 1
+            current_node.r += reward
+            reward = -reward
+
+            # Fix the memleak: Call the weak reference to get the parent
+            if current_node.parent is None:
+                current_node = None # At the root
+            else:
+                current_node = current_node.parent() # Call the weakref
+
     def loop(self):
         node = self.selection()
         value = self.expansion(node)

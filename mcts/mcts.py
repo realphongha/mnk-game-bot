@@ -40,5 +40,12 @@ class MonteCarloTreeSearchMixin(ABC, PerfMonitorMixin):
         # ucb1
         if node.n == 0:
             return float("inf")
-        return node.r/node.n + c * math.sqrt(math.log(node.parent.n)/node.n)
+
+        # Fix the memleak: Call the weak reference to get the parent
+        parent_node = node.parent()
+        if parent_node is None:
+            # This can happen if the node is the root
+            return float("inf")
+
+        return node.r/node.n + c * math.sqrt(math.log(parent_node.n)/node.n)
 

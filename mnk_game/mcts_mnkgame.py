@@ -26,6 +26,13 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         self.root = None
         self.debug = True
 
+    def __del__(self):
+        # Avoid the multiprocessing pool leak
+        if self.processes != 1 and hasattr(self, 'pool'):
+            self.pool.close()
+            self.pool.join()
+            logging.info("Closed MCTS multiprocessing pool.")
+
     def update_tree(self, two_last_moves):
         try:
             if self.debug:
@@ -145,9 +152,16 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
             reward = 0.5
         else:
             reward = 1
-        while node is not None:
-            node.n += times
-            node.r += reward * times
-            node = node.parent
+        current_node = node
+        while current_node is not None:
+            current_node.n += times
+            current_node.r += reward * times
+
+            # Fix the memleak: Call the weak reference to get the parent
+            if current_node.parent is None:
+                current_node = None # At the root
+            else:
+                current_node = current_node.parent() # Call the weakref
+
             reward = 1-reward
 

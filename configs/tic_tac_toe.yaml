@@ -9,7 +9,7 @@ board_game:
   button_font_size: 15
   symbol_font_size: 90
 bot:
-  algorithm: alphazero
+  algorithm: mcts
   alphazero:
     max_thinking_time: 1.0  # in seconds
     batch: 32

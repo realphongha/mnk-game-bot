@@ -11,7 +11,7 @@ board_game:
 bot:
   algorithm: alphazero
   alphazero:
-    max_thinking_time: 0.2  # in seconds
+    max_thinking_time: 0.5  # in seconds
     batch: 32
     workers: 8
     exploration_const: 2
