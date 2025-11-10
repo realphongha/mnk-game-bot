@@ -58,7 +58,13 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     def score(node, c):
         # puct
         v = node.r / node.n if node.n > 0 else 0.0
-        e = c * node.prior * math.sqrt(node.parent.n) / (1 + node.n)
+
+        # Fix the memleak: Call the weak reference to get the parent
+        parent_node = node.parent()
+        parent_n = 0
+        if parent_node is not None:
+            parent_n = parent_node.n
+        e = c * node.prior * math.sqrt(parent_n) / (1 + node.n)
         return v + e
 
     @staticmethod
@@ -218,11 +224,6 @@ class AlphaZeroMnkGame(MnkGameBotBase):
 
     def backpropagation(self, node, value):
         reward = -value
-        while node is not None:
-            node.n += 1
-            node.r += reward
-            reward = -reward
-            node = node.parent
 
         current_node = node
         while current_node is not None:

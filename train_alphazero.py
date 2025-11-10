@@ -9,6 +9,7 @@ import random
 import hashlib
 import shutil
 import logging
+import json
 from collections import Counter
 
 import torch
@@ -25,6 +26,14 @@ from mnk_game import get_agent
 from mnk_game.alphazero_net import MODELS
 from board_state.mnk_board import MnkBoard
 from utils.logger import setup_logger
+
+
+def init_worker():
+    """Sets a unique random seed for each worker process."""
+    seed = (os.getpid() + int(time.time() * 1000)) % (2**32)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
 
 class MnkDataset(torch.utils.data.Dataset):
@@ -139,7 +148,7 @@ def lr_decay(total_it, current_it, max_lr, min_lr):
 def self_play(cfg, temperature, bot1_type, bot2_type, num_games,
               workers, net=None, get_data_from_all=False):
     s = time.time()
-    with mp.Pool(workers) as pool:
+    with mp.Pool(workers, initializer=init_worker) as pool:
         args = [
             (cfg, temperature, bot1_type, bot2_type, net, get_data_from_all)
             for _ in range(num_games)
@@ -276,7 +285,7 @@ def play_worker(cfg, bot1_type, bot2_type, net1=None, net2=None):
 def play(cfg, bot1_type, bot2_type, num_games,
               workers, net1=None, net2=None):
     s = time.time()
-    with mp.Pool(workers) as pool:
+    with mp.Pool(workers, initializer=init_worker) as pool:
         args = [
             (cfg, bot1_type, bot2_type, net1, net2)
             for _ in range(num_games)
@@ -320,6 +329,12 @@ def arena(best_net, new_net, cfg, vs_mcts):
 
 
 def main(cfg, opt):
+    seed = int(time.time())
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    logging.info(f"Using random seed: {seed}")
+
     net = None
     best_net = None
     device = cfg["bot"]["alphazero"]["device"]
@@ -342,6 +357,10 @@ def main(cfg, opt):
             }
         )
         wandb.save(opt.cfg)
+    else:
+        log_json = {}
+        log_path = os.path.join(exp_dir, "train.jsonl")
+        log_file = open(log_path, "a", encoding="utf-8")
     shutil.copy(opt.cfg, exp_dir)
     setup_logger(os.path.join(exp_dir, "train.log"))
 
@@ -358,6 +377,7 @@ def main(cfg, opt):
     cfg["bot"]["mcts"]["num_simulations"] = 1
     if cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"] > 0:
         logging.info("Bootstrapping the weights by self-playing pure MCTS...")
+        st = time.time()
         training_data = self_play(cfg, temperature, "mcts", "mcts",
             cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"],
             workers, None, True)
@@ -371,18 +391,23 @@ def main(cfg, opt):
         best_net = deep_copy_net(net, cfg)
         torch.save(net.state_dict(), os.path.join(exp_dir, f"it0.pth"))
         torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
+        log_content = {
+            "winrate_vs_mcts": vs_mcts[1],
+            "learning_rate": cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
+            "temperature": temperature,
+            "train_loss": loss
+        }
         if not opt.no_wandb:
-            wandb.log({
-                "winrate_vs_mcts": vs_mcts[1],
-                "learning_rate": cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
-                "temperature": temperature,
-                "train_loss": loss
-            })
+            wandb.log(log_content)
+        else:
+            log_file.write(json.dumps(log_content, ensure_ascii=False) + "\n")
+        logging.info(f"Bootstrapping took {time.time() - st} seconds.")
 
     # main training loop
     for it in range(num_it):
         logging.info("\n=================")
         logging.info(f"Iteration {it+1}:")
+        st = time.time()
         temperature = temperature_decay(
             num_it, it+1, *cfg["bot"]["alphazero"]["temperature"])
         lr = lr_decay(
@@ -430,13 +455,19 @@ def main(cfg, opt):
             best_net = deep_copy_net(net, cfg)
             torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
             logging.info(f"Saved weights to best.pth")
+        log_content = {
+            "winrate_vs_mcts": vs_mcts[1],
+            "learning_rate": lr,
+            "temperature": temperature,
+            "train_loss": loss
+        }
         if not opt.no_wandb:
-            wandb.log({
-                "winrate_vs_mcts": vs_mcts[1],
-                "learning_rate": lr,
-                "temperature": temperature,
-                "train_loss": loss
-            })
+            wandb.log(log_content)
+        else:
+            log_file.write(json.dumps(log_content, ensure_ascii=False) + "\n")
+        logging.info(f"Iteration took {time.time() - st} seconds.")
+    if opt.no_wandb:
+        log_file.close()
 
 
 if __name__ == "__main__":

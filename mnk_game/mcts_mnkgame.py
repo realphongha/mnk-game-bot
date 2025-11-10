@@ -2,6 +2,7 @@ import time
 import random
 import multiprocessing
 import logging
+import os
 from typing import Tuple
 
 import numpy as np
@@ -12,6 +13,13 @@ from board_state.mnk_state import MnkState, rollout
 from board_state.mnk_board import MnkBoard
 
 
+def init_worker():
+    """Sets a unique random seed for each worker process."""
+    seed = (os.getpid() + int(time.time() * 1000)) % (2**32)
+    random.seed(seed)
+    np.random.seed(seed)
+
+
 class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
     def __init__(self, max_thinking_time, max_rollout, processes, policy,
                  exploration_const, num_simulations) -> None:
@@ -19,7 +27,7 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         self.max_rollout = max_rollout
         self.processes = processes
         if self.processes != 1:
-            self.pool = multiprocessing.Pool(self.processes)
+            self.pool = multiprocessing.Pool(self.processes, initializer=init_worker)
         self.policy = policy
         self.c = exploration_const
         self.num_simulations = num_simulations
