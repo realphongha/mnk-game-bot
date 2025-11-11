@@ -3,6 +3,7 @@ AI bot utilizing Monte Carlo tree search to play [m,n,k-games](https://en.wikipe
 
 # Implemented stuffs
 ## Bot algorithms
+* [Google's AlphaZero](https://arxiv.org/pdf/1712.01815
 * Monte Carlo tree search (MCTS) with Single-run parallelization:
 ```
 @inproceedings{cazenave2007parallelization,
@@ -13,19 +14,18 @@ AI bot utilizing Monte Carlo tree search to play [m,n,k-games](https://en.wikipe
 }
 ```
 ## Game configs
-* Tic-tac-toe
-* Gomoku 7x7
-* Gomoku 8x9
-* Gomoku 9x9
-* Gomoku 11x11
-* Gomoku 15x15 (MCTS seems not to be effective yet because of speed problem)
+* Tic-tac-toe (MCTS should be optimal for Tic-tac-toe)
+* Gomoku 7x7 (AlphaZero can be superhuman, converge in ~10 iterations)
+* Gomoku 8x9 (to be tested)
+* Gomoku 9x9 (to be tested)
+* Gomoku 11x11 (to be tested)
+* Gomoku 15x15 (to be tested)
 ## Cython optimization
 * MCTS:
 ```
 For end-game board checking
 For getting possible moves on board
 For MnkBoard and MnkState classes
-For calculating UCB + score (not so big improvement)
 ```
 
 # How to install
