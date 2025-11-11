@@ -16,7 +16,7 @@ AI bot utilizing Monte Carlo tree search to play [m,n,k-games](https://en.wikipe
 ## Game configs
 * Tic-tac-toe (MCTS should be optimal for Tic-tac-toe)
 * Gomoku 7x7 (AlphaZero can be superhuman, converge in ~10 iterations)
-* Gomoku 8x9 (to be tested)
+* Gomoku 8x9 (there's a bug when m != n for now, to be fixed)
 * Gomoku 9x9 (to be tested)
 * Gomoku 11x11 (to be tested)
 * Gomoku 15x15 (to be tested)

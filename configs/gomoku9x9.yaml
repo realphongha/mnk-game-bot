@@ -16,4 +16,4 @@ bot:
     processes: 8  # number of processes
     policy: simple
     exploration_const: 1.4142135623730951
-    num_simulations: 64
+    num_simulations: 1
