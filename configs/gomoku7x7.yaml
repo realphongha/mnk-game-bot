@@ -40,7 +40,7 @@ bot:
       init_lr: 0.001
       min_lr: 0.00001
     eps: 10
-    arena_games: 64
+    arena_games: 16
     eval: vs_last  # vs_mcts, vs_last
   mcts:
     # max_thinking_time: 2.0  # in seconds
