@@ -58,7 +58,6 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
         return self.solve(board, turn, moves)[0]
 
     def solve(self, board: MnkBoard, turn: int, moves) -> Tuple[int, int]:
-        start = time.time()
         if len(moves) < 2 or self.root is None:
             if self.debug:
                 logging.info("Initializing new tree...")
@@ -67,10 +66,15 @@ class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):
             if not self.update_tree(moves[-2:]):
                 self.root = MnkState(board, turn, self.policy, None, None)
 
+        start = time.time()
+        num_sim = 0
         while time.time()-start < self.max_thinking_time and \
                 self.total_rollout < self.max_rollout:
             self.loop()
-        return self.get_results()
+            num_sim += self.num_simulations
+        res = self.get_results()
+        logging.debug(f"MCTS simulations: {num_sim}")
+        return res
 
     def get_move_winrate(self, move):
         child = self.root.children.get(move, None)

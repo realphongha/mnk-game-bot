@@ -79,7 +79,6 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     @torch.no_grad()
     def solve(self, board, turn, moves):
         self.net.eval()
-        start = time.time()
         if len(moves) < 2 or self.root is None:
             if self.debug:
                 logging.info("Initializing new tree...")
@@ -113,9 +112,14 @@ class AlphaZeroMnkGame(MnkGameBotBase):
         for state in states:
             i, j = state.last_move
             state.prior = policy[i*self.n + j].item()
+        start = time.time()
+        num_sim = 0
         while time.time()-start < self.max_thinking_time:
             self.loop()
-        return self.get_results()
+            num_sim += 1
+        res = self.get_results()
+        logging.debug(f"MCTS simulations: {num_sim}")
+        return res
 
     def get_results(self):
         policy = np.zeros((self.m * self.n,), dtype=np.float32)
