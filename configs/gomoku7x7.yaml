@@ -13,7 +13,7 @@ bot:
   alphazero:
     max_thinking_time: 2.0  # in seconds
     batch: 32
-    workers: 2
+    workers: 8
     exploration_const: 2
     dirichlet_alpha: 0.3
     dirichlet_eps: 0.25
