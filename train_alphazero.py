@@ -345,6 +345,7 @@ def main(cfg, opt):
         device = "cpu"
         cfg["bot"]["alphazero"]["device"] = device
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
+    workers = cfg["bot"]["alphazero"]["workers"]
 
     if not opt.no_wandb:
         import wandb
@@ -464,7 +465,6 @@ def main(cfg, opt):
             logging.info(f"Bootstrapping took {time.time() - st} seconds.")
         start_it = 0
 
-    workers = cfg["bot"]["alphazero"]["workers"]
     # disable multiprocessing inside pure MCTS
     # (we already uses multiprocessing for self-play and arena)
     cfg["bot"]["mcts"]["processes"] = 1
