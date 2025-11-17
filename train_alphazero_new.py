@@ -299,7 +299,7 @@ def play(cfg, bot1_type, bot2_type, num_games,
     return float(np.mean(res))  # win rate of Bot 2
 
 
-def arena(best_net, new_net, cfg, vs_mcts, vs_best):
+def arena(best_net, new_net, cfg, vs_mcts):
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
     games = cfg["bot"]["alphazero"]["arena_games"]
     workers = cfg["bot"]["alphazero"]["workers"]
@@ -316,7 +316,6 @@ def arena(best_net, new_net, cfg, vs_mcts, vs_best):
         winrate = play(cfg, "alphazero", "alphazero", games,
             workers, net1=best_net, net2=new_net) * 100
         logging.info("Winrate against best iteration: %.2f%%" % winrate)
-        vs_best[0] = winrate
         if eval == "vs_last":
             evolved = winrate > 50.0
 
@@ -346,7 +345,6 @@ def main(cfg, opt):
         device = "cpu"
         cfg["bot"]["alphazero"]["device"] = device
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
-    workers = cfg["bot"]["alphazero"]["workers"]
 
     if not opt.no_wandb:
         import wandb
@@ -448,7 +446,7 @@ def main(cfg, opt):
                 None)
             net.to("cpu")  # for multiprocessing
             net.share_memory()
-            _ = arena(best_net, net, cfg, vs_mcts, [None])
+            _ = arena(best_net, net, cfg, vs_mcts)
             best_net = deep_copy_net(net, cfg)
             torch.save(net.state_dict(), os.path.join(exp_dir, f"it0.pth"))
             torch.save(net.state_dict(), os.path.join(exp_dir, f"last.pth"))
@@ -466,6 +464,7 @@ def main(cfg, opt):
             logging.info(f"Bootstrapping took {time.time() - st} seconds.")
         start_it = 0
 
+    workers = cfg["bot"]["alphazero"]["workers"]
     # disable multiprocessing inside pure MCTS
     # (we already uses multiprocessing for self-play and arena)
     cfg["bot"]["mcts"]["processes"] = 1
@@ -514,8 +513,7 @@ def main(cfg, opt):
         if best_net is not None:
             best_net.to("cpu")  # for multiprocessing
             best_net.share_memory()
-        vs_best = [None,]
-        evolved = arena(best_net, net, cfg, vs_mcts, vs_best)
+        evolved = arena(best_net, net, cfg, vs_mcts)
 
         # save net
         torch.save(net.state_dict(), os.path.join(exp_dir, f"it{it+1}.pth"))
@@ -527,7 +525,6 @@ def main(cfg, opt):
             logging.info(f"Saved weights to best.pth")
         log_content = {
             "winrate_vs_mcts": vs_mcts[1],
-            "winrate_vs_last_best": vs_best[0],
             "learning_rate": lr,
             "temperature": temperature,
             "train_loss": loss
