@@ -71,14 +71,16 @@ class MnkDataset(torch.utils.data.Dataset):
         count_by_res = {res: len(data) for res, data in data_by_res.items()}
         logging.info(f"Data by results: {count_by_res}")
         max_by_res = max(count_by_res.values())
-        logging.info("Duplicating data to balance classes...")
-        for res in [-1, 0, 1]:
-            if count_by_res[res] == 0:
-                logging.warning("No data for result %d" % res)
-                continue
-            while count_by_res[res] < max_by_res:
-                self.data.append(random.choice(data_by_res[res]))
-                count_by_res[res] += 1
+        self.dup_data = cfg["bot"]["alphazero"].get("dup_data", False)
+        if self.dup_data:
+            logging.info("Duplicating data to balance classes...")
+            for res in [-1, 0, 1]:
+                if count_by_res[res] == 0:
+                    logging.warning("No data for result %d" % res)
+                    continue
+                while count_by_res[res] < max_by_res:
+                    self.data.append(random.choice(data_by_res[res]))
+                    count_by_res[res] += 1
 
     def __len__(self):
         return len(self.data)

@@ -26,14 +26,16 @@ bot:
       residual:
         in_channels: 2
         conv_channels: 128
-        res_blocks: 8
+        res_blocks: 4
     mcts_warm_start:
-      self_play_games: 128
+      # self_play_games: 128
+      self_play_games: 0
       lr: 0.005
-      eps: 10
+      # eps: 10
+      eps: 5
     self_play_games: 128
-    self_play_games_vs_random: 8
-    self_play_games_vs_mcts: 8
+    self_play_games_vs_random: 0
+    self_play_games_vs_mcts: 0
     temperature: [1.0, 0.01]
     draw_reward: 0.0
     lr_scheduler:
@@ -42,6 +44,7 @@ bot:
     eps: 10
     arena_games: 16
     eval: vs_last  # vs_mcts, vs_last
+    dup_data: False
   mcts:
     max_thinking_time: 5.0  # in seconds
     max_rollout: 1000000000
