@@ -16,7 +16,7 @@ class AlphaZeroMnkGame(MnkGameBotBase):
     def __init__(self, m, n, k, max_thinking_time, batch, exploration_const,
                  dirichlet_alpha, dirichlet_eps, exp_dir, device, debug, net,
                  **kwargs):
-        self.max_thinking_time = max_thinking_time
+        super().__init__(max_thinking_time)
         self.batch = batch
         self.c = exploration_const
         self.m, self.n, self.k = m, n, k

@@ -12,6 +12,10 @@ from libc.time cimport time
 # Seed the C random number generator ONCE when the module is loaded
 srand(<unsigned int>time(NULL))
 
+def seed_c_rand(int seed):
+    """Reseeds the C random number generator. Important for multiprocessing."""
+    srand(<unsigned int>seed)
+
 
 cdef class MnkState:
     cdef:

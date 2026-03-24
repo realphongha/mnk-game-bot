@@ -18,6 +18,8 @@ def init_worker():
     seed = (os.getpid() + int(time.time() * 1000)) % (2**32)
     random.seed(seed)
     np.random.seed(seed)
+    from board_state.mnk_state import seed_c_rand
+    seed_c_rand(seed)
 
 
 class MonteCarloTreeSearchMnkGame(MonteCarloTreeSearchMixin, MnkGameBotBase):

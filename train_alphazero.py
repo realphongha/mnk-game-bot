@@ -36,6 +36,8 @@ def init_worker():
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+    from board_state.mnk_state import seed_c_rand
+    seed_c_rand(seed)
 
 
 class MnkDataset(torch.utils.data.Dataset):

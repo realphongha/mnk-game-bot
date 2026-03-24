@@ -73,8 +73,7 @@ class ResidualNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
+        x = F.relu(self.bn1(self.conv1(x)))
         x = self.res(x)
         policy = self.policy(x)
         value = self.value(x)
