@@ -3,6 +3,7 @@ import yaml
 import sys
 import time
 import os
+import re
 import traceback
 import copy
 import random
@@ -26,6 +27,7 @@ from mnk_game import get_agent
 from mnk_game.alphazero_net import MODELS
 from board_state.mnk_board import MnkBoard
 from utils.logger import setup_logger
+from utils.checkpoint import load_net_from_path
 
 
 def init_worker():
@@ -69,14 +71,16 @@ class MnkDataset(torch.utils.data.Dataset):
         count_by_res = {res: len(data) for res, data in data_by_res.items()}
         logging.info(f"Data by results: {count_by_res}")
         max_by_res = max(count_by_res.values())
-        logging.info("Duplicating data to balance classes...")
-        for res in [-1, 0, 1]:
-            if count_by_res[res] == 0:
-                logging.warning("No data for result %d" % res)
-                continue
-            while count_by_res[res] < max_by_res:
-                self.data.append(random.choice(data_by_res[res]))
-                count_by_res[res] += 1
+        self.dup_data = cfg["bot"]["alphazero"].get("dup_data", False)
+        if self.dup_data:
+            logging.info("Duplicating data to balance classes...")
+            for res in [-1, 0, 1]:
+                if count_by_res[res] == 0:
+                    logging.warning("No data for result %d" % res)
+                    continue
+                while count_by_res[res] < max_by_res:
+                    self.data.append(random.choice(data_by_res[res]))
+                    count_by_res[res] += 1
 
     def __len__(self):
         return len(self.data)
@@ -297,7 +301,7 @@ def play(cfg, bot1_type, bot2_type, num_games,
     return float(np.mean(res))  # win rate of Bot 2
 
 
-def arena(best_net, new_net, cfg, vs_mcts):
+def arena(best_net, new_net, cfg, vs_mcts, vs_best):
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
     games = cfg["bot"]["alphazero"]["arena_games"]
     workers = cfg["bot"]["alphazero"]["workers"]
@@ -314,6 +318,7 @@ def arena(best_net, new_net, cfg, vs_mcts):
         winrate = play(cfg, "alphazero", "alphazero", games,
             workers, net1=best_net, net2=new_net) * 100
         logging.info("Winrate against best iteration: %.2f%%" % winrate)
+        vs_best[0] = winrate
         if eval == "vs_last":
             evolved = winrate > 50.0
 
@@ -343,68 +348,133 @@ def main(cfg, opt):
         device = "cpu"
         cfg["bot"]["alphazero"]["device"] = device
     m, n, k = cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"]
-    date_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
-    exp_dir = os.path.join(cfg["bot"]["alphazero"]["exp_dir"],
-                           cfg["board_game"]["name"] + "_" + date_time_str)
-    os.makedirs(exp_dir)
+    workers = cfg["bot"]["alphazero"]["workers"]
+
     if not opt.no_wandb:
         import wandb
-        wandb.init(
-            project="mnk-alphazero",
-            name=cfg["board_game"]["name"] + "_" + date_time_str,
-            config={
-                "name": cfg["board_game"]["name"], "m": m, "n": n, "k": k,
-            }
-        )
-        wandb.save(opt.cfg)
+    resumed = opt.resume is not None
+    if resumed:
+        exp_dir = opt.resume
+        assert os.path.isdir(exp_dir), f"--resume path not found: {exp_dir}"
+        assert os.path.isfile(os.path.join(exp_dir, "last.pth"))
+        assert os.path.isfile(os.path.join(exp_dir, "best.pth"))
+        if os.path.isfile(os.path.join(exp_dir, "train.log")):
+            cur_time = time.strftime("%Y-%m-%d_%H-%M-%S")
+            os.rename(os.path.join(exp_dir, "train.log"),
+                      os.path.join(exp_dir, f"train.log.{cur_time}"))
+            logging.info(f"Backed up old train.log to train.log.{cur_time}")
+        assert os.path.isfile(os.path.join(exp_dir, "train.jsonl"))
+        net = load_net_from_path(cfg, os.path.join(exp_dir, "last.pth"), device)
+        best_net = load_net_from_path(cfg, os.path.join(exp_dir, "best.pth"), device)
+        logging.info(f"Resumed current net from {os.path.join(exp_dir, 'last.pth')}")
+        logging.info(f"Resumed best net from {os.path.join(exp_dir, 'best.pth')}")
+        setup_logger(os.path.join(exp_dir, "train.log"))
+        vs_mcts = [0.0, 0.0]
+        best_v = 0.0
+        last_v = 0.0
+        with open(os.path.join(exp_dir, "train.jsonl"), "r", encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                last_v = float(rec.get("winrate_vs_mcts", 0.0))
+                if last_v > best_v:
+                    best_v = last_v
+        vs_mcts = [best_v, last_v]
+        logging.info(f"Recovered vs_mcts from log. Best: {best_v:.2f}%, Last: {last_v:.2f}%")
+        log_file = open(os.path.join(exp_dir, "train.jsonl"), "a", encoding="utf-8")
+        if not opt.no_wandb:
+            run_name = os.path.basename(exp_dir)
+            wandb_id_path = os.path.join(exp_dir, ".wandb_id")
+            wandb_kwargs = dict(
+                project="mnk-alphazero",
+                name=run_name,
+                config={"name": cfg["board_game"]["name"], "m": m, "n": n, "k": k},
+            )
+            if os.path.exists(wandb_id_path):
+                with open(wandb_id_path, "r", encoding="utf-8") as f:
+                    run_id = f.read().strip()
+                wandb_kwargs.update(id=run_id, resume="must")
+            else:
+                wandb_kwargs.update(resume="allow")
+            wandb.init(**wandb_kwargs)
+        num_it = cfg["bot"]["alphazero"]["it"]
+        start_it = -1
+        for fn in os.listdir(exp_dir):
+            m = re.match(r"it(\d+)\.pth$", fn)
+            if m:
+                start_it = max(start_it, int(m.group(1)))
+        assert start_it >= 0, "Just start a new run pls"
+        if start_it >= num_it:
+            logging.info("All iterations already completed. Nothing to do.")
+            return
     else:
+        date_time_str = time.strftime("%Y-%m-%d_%H-%M-%S")
+        exp_dir = os.path.join(cfg["bot"]["alphazero"]["exp_dir"],
+                               cfg["board_game"]["name"] + "_" + date_time_str)
+        os.makedirs(exp_dir)
+        if not opt.no_wandb:
+            wandb.init(
+                project="mnk-alphazero",
+                name=cfg["board_game"]["name"] + "_" + date_time_str,
+                config={
+                    "name": cfg["board_game"]["name"], "m": m, "n": n, "k": k,
+                }
+            )
+            wandb.save(opt.cfg)
+            with open(os.path.join(exp_dir, ".wandb_id"), "w", encoding="utf-8") as f:
+                f.write(wandb.run.id + "\n")
         log_json = {}
         log_path = os.path.join(exp_dir, "train.jsonl")
         log_file = open(log_path, "a", encoding="utf-8")
-    shutil.copy(opt.cfg, exp_dir)
-    setup_logger(os.path.join(exp_dir, "train.log"))
+        shutil.copy(opt.cfg, exp_dir)
+        setup_logger(os.path.join(exp_dir, "train.log"))
 
-    workers = cfg["bot"]["alphazero"]["workers"]
-    num_it = cfg["bot"]["alphazero"]["it"]
-    temperature = temperature_decay(
-        num_it, 0, *cfg["bot"]["alphazero"]["temperature"])
-    vs_mcts = [0.0, 0.0]  # best, current
+        num_it = cfg["bot"]["alphazero"]["it"]
+        temperature = temperature_decay(
+            num_it, 0, *cfg["bot"]["alphazero"]["temperature"])
+        vs_mcts = [0.0, 0.0]  # best, current
 
-    # bootstrap with pure MCTS
+        # bootstrap with pure MCTS
+        # disable multiprocessing inside pure MCTS
+        # (we already uses multiprocessing for self-play and arena)
+        cfg["bot"]["mcts"]["processes"] = 1
+        cfg["bot"]["mcts"]["num_simulations"] = 1
+        if cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"] > 0:
+            logging.info("Bootstrapping the weights by self-playing pure MCTS...")
+            st = time.time()
+            training_data = self_play(cfg, temperature, "mcts", "mcts",
+                cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"],
+                workers, None, True)
+            net, loss = train(training_data, cfg,
+                cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
+                cfg["bot"]["alphazero"]["mcts_warm_start"]["eps"],
+                None)
+            net.to("cpu")  # for multiprocessing
+            net.share_memory()
+            _ = arena(best_net, net, cfg, vs_mcts, [None])
+            best_net = deep_copy_net(net, cfg)
+            torch.save(net.state_dict(), os.path.join(exp_dir, f"it0.pth"))
+            torch.save(net.state_dict(), os.path.join(exp_dir, f"last.pth"))
+            torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
+            log_content = {
+                "winrate_vs_mcts": vs_mcts[1],
+                "learning_rate": cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
+                "temperature": temperature,
+                "train_loss": loss
+            }
+            if not opt.no_wandb:
+                wandb.log(log_content)
+            log_file.write(json.dumps(log_content, ensure_ascii=False) + "\n")
+            log_file.flush()  # forces it to disk
+            logging.info(f"Bootstrapping took {time.time() - st} seconds.")
+        start_it = 0
+
     # disable multiprocessing inside pure MCTS
     # (we already uses multiprocessing for self-play and arena)
     cfg["bot"]["mcts"]["processes"] = 1
     cfg["bot"]["mcts"]["num_simulations"] = 1
-    if cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"] > 0:
-        logging.info("Bootstrapping the weights by self-playing pure MCTS...")
-        st = time.time()
-        training_data = self_play(cfg, temperature, "mcts", "mcts",
-            cfg["bot"]["alphazero"]["mcts_warm_start"]["self_play_games"],
-            workers, None, True)
-        net, loss = train(training_data, cfg,
-            cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
-            cfg["bot"]["alphazero"]["mcts_warm_start"]["eps"],
-            None)
-        net.to("cpu")  # for multiprocessing
-        net.share_memory()
-        _ = arena(best_net, net, cfg, vs_mcts)
-        best_net = deep_copy_net(net, cfg)
-        torch.save(net.state_dict(), os.path.join(exp_dir, f"it0.pth"))
-        torch.save(net.state_dict(), os.path.join(exp_dir, f"best.pth"))
-        log_content = {
-            "winrate_vs_mcts": vs_mcts[1],
-            "learning_rate": cfg["bot"]["alphazero"]["mcts_warm_start"]["lr"],
-            "temperature": temperature,
-            "train_loss": loss
-        }
-        if not opt.no_wandb:
-            wandb.log(log_content)
-        else:
-            log_file.write(json.dumps(log_content, ensure_ascii=False) + "\n")
-        logging.info(f"Bootstrapping took {time.time() - st} seconds.")
 
     # main training loop
-    for it in range(num_it):
+    for it in range(start_it, num_it):
         logging.info("\n=================")
         logging.info(f"Iteration {it+1}:")
         st = time.time()
@@ -446,10 +516,12 @@ def main(cfg, opt):
         if best_net is not None:
             best_net.to("cpu")  # for multiprocessing
             best_net.share_memory()
-        evolved = arena(best_net, net, cfg, vs_mcts)
+        vs_best = [None,]
+        evolved = arena(best_net, net, cfg, vs_mcts, vs_best)
 
         # save net
         torch.save(net.state_dict(), os.path.join(exp_dir, f"it{it+1}.pth"))
+        torch.save(net.state_dict(), os.path.join(exp_dir, f"last.pth"))
         logging.info(f"Saved weights to it{it+1}.pth")
         if evolved or best_net is None:
             best_net = deep_copy_net(net, cfg)
@@ -457,17 +529,17 @@ def main(cfg, opt):
             logging.info(f"Saved weights to best.pth")
         log_content = {
             "winrate_vs_mcts": vs_mcts[1],
+            "winrate_vs_last_best": vs_best[0],
             "learning_rate": lr,
             "temperature": temperature,
             "train_loss": loss
         }
         if not opt.no_wandb:
             wandb.log(log_content)
-        else:
-            log_file.write(json.dumps(log_content, ensure_ascii=False) + "\n")
+        log_file.write(json.dumps(log_content, ensure_ascii=False) + "\n")
+        log_file.flush()  # forces it to disk
         logging.info(f"Iteration took {time.time() - st} seconds.")
-    if opt.no_wandb:
-        log_file.close()
+    log_file.close()
 
 
 if __name__ == "__main__":
@@ -476,6 +548,8 @@ if __name__ == "__main__":
                         help='path to config file')
     parser.add_argument('--no-wandb', default=False, action='store_true',
                         help='disable wandb')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='path to an experiment directory to resume from')
     opt = parser.parse_args()
     with open(opt.cfg, "r") as stream:
         try:

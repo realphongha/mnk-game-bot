@@ -7,6 +7,7 @@ from mnk_game.mcts_mnkgame import MonteCarloTreeSearchMnkGame
 from mnk_game.alphazero_mnkgame import AlphaZeroMnkGame
 from mnk_game.alphazero_net import MODELS
 from utils.logger import setup_logger
+from utils.checkpoint import load_net_from_path
 
 
 def main(cfg):
@@ -21,12 +22,7 @@ def main(cfg):
         device = "cpu"
     cfg["bot"]["alphazero"]["device"] = device
     gui.player1 = AlphaZeroMnkGame(m, n, k, **cfg["bot"]["alphazero"])
-    net_type = cfg["bot"]["alphazero"]["net"]["type"]
-    net = MODELS[net_type](
-        cfg["board_game"]["m"], cfg["board_game"]["n"], cfg["board_game"]["k"],
-        **cfg["bot"]["alphazero"]["net"][net_type]
-    )
-    net.load_state_dict(torch.load(opt.weights, map_location=device))
+    net = load_net_from_path(cfg, opt.weights, device)
     gui.player1.init_net(net)
     gui.player2 = MonteCarloTreeSearchMnkGame(**cfg["bot"]["mcts"])
     gui.player1.debug = True
